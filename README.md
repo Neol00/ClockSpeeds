@@ -59,7 +59,7 @@ sudo pacman -S python gtk3 gobject-introspection python-gobject libappindicator-
 
 ## License
 
-This application is licensed under the GPLv3 License - see the LICENSE.md file for details.
+This application is licensed under the GPLv3 License - see the LICENSE file for details.
 
 ## Support
 

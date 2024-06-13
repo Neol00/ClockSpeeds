@@ -20,7 +20,7 @@ Type=Application
 Name=ClockSpeeds
 Comment=Monitor and control your CPU
 Exec=python3 $clockspeeds_path/launch.py
-Icon=$clockspeeds_path/icons/ClockSpeeds-Icon.png
+Icon=$clockspeeds_path/icon/ClockSpeeds-Icon.png
 Terminal=false
 Categories=Utility;Application;
 EOF

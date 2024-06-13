@@ -29,6 +29,14 @@ git clone https://github.com/Neol00/ClockSpeeds.git
 then run,
 
 ```sh
+cd ClockSpeeds
+```
+
+```sh
+chmod +x ./install.sh
+```
+
+```sh
 ./install.sh
 ```
 

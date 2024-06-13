@@ -7,4 +7,4 @@
 - GTK (https://www.gtk.org/)
 
 ## Special Thanks
-ryzen_smu (https://github.com/leogx9r/ryzen_smu)
+- ryzen_smu (https://github.com/leogx9r/ryzen_smu)

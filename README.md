@@ -1,5 +1,7 @@
 # ClockSpeeds CPU Monitoring and Control Application for Linux
 
+<img src="icon/ClockSpeeds-Icon-hi.png" alt="Sample Image" width="300" height="300">
+
 This is a GUI application that allows you to monitor and control various aspects of the CPU on Linux systems.
 This project is in early development so some things might not work as expected.
 
@@ -10,11 +12,16 @@ This project is in early development so some things might not work as expected.
 * Current CPU load per thread and average,
 * Package temperature,
 * Current selected governor
+
+<img src="images/ClockSpeeds-Preview.png" alt="Sample Image" width="470" height="400">
+
 - **Control CPU:** 
 * Adjust CPU the minimum and maximum frequencies,
 * Select governor,
 * Toggle boost,
 * Change TDP
+
+<img src="images/ClockSpeeds-Preview1.png" alt="Sample Image" width="470" height="400">
 
 ## Getting Started
 

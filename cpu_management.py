@@ -32,6 +32,7 @@ class CPUManager:
         # Initialize the logger
         self.logger = get_logger()
 
+        # Set of valid CPU governors
         self.valid_governors = frozenset([
             'conservative', 
             'ondemand', 
@@ -44,11 +45,14 @@ class CPUManager:
         # Flag to track initial logging
         self.initial_log_done = False
 
+        # Initialize dictionaries for GUI components
         self.clock_labels = {}
         self.progress_bars = {}
         self.min_scales = {}
         self.max_scales = {}
         self.cpu_min_max_checkbuttons = {}
+
+        # GUI components
         self.average_clock_entry = None
         self.average_progress_bar = None
         self.package_temp_entry = None
@@ -59,20 +63,29 @@ class CPUManager:
 
         self.periodic_task_id = None
 
-        # Load interval from config or use default
+        # Load update interval from config or use default
         self.update_interval = float(config_manager.get_setting("Settings", "updateinterval", "1.0"))
 
+        # Read initial CPU statistics
         self.prev_stat = self.read_stat_file()
 
-        # Schedule all periodic tasks
+        # Call method on startup
         self.schedule_periodic_tasks()
 
     def schedule_periodic_tasks(self):
+        # Schedule the periodic tasks with the specified update interval
         if self.periodic_task_id:
             GLib.source_remove(self.periodic_task_id)
         self.periodic_task_id = GLib.timeout_add(int(self.update_interval * 1000), self.run_periodic_tasks)
 
+    def stop_periodic_tasks(self):
+        # Stop the periodic tasks if they are running
+        if self.periodic_task_id:
+            GLib.source_remove(self.periodic_task_id)
+            self.periodic_task_id = None
+
     def run_periodic_tasks(self):
+        # Run the periodic tasks to update the CPU information
         try:
             self.update_clock_speeds()
             self.update_load()
@@ -85,13 +98,14 @@ class CPUManager:
         return False  # Do not re-run this method automatically, rescheduling is handled explicitly
 
     def set_update_interval(self, interval):
+        # Set the update interval for periodic tasks and save it in the config
         self.update_interval = round(max(0.1, min(20.0, interval)), 1)
         self.logger.info(f"Update interval set to {self.update_interval} seconds")
         config_manager.set_setting("Settings", "updateinterval", f"{self.update_interval:.1f}")
         self.schedule_periodic_tasks()
 
-    # Set up GUI component references
     def setup_gui_components(self):
+        # Set up references to GUI components from the shared dictionary
         try:
             self.clock_labels = gui_components['clock_labels']
             self.progress_bars = gui_components['progress_bars']
@@ -109,6 +123,7 @@ class CPUManager:
             self.logger.error(f"Error setting up CPU manager's GUI components: Component {e} not found")
 
     def get_cpu_info(self):
+        # Retrieve CPU information from system files
         try:
             cpuinfo_file = cpu_file_search.proc_files['cpuinfo']
             meminfo_file = cpu_file_search.proc_files['meminfo']
@@ -119,49 +134,16 @@ class CPUManager:
                 self.logger.error("meminfo file not found.")
                 return
 
-            model_name = None
-            cache_size = None
-            physical_cores = 0
-            virtual_cores = cpu_file_search.thread_count
-
-            with open(cpuinfo_file, 'r') as file:
-                for line in file:
-                    if line.startswith('model name'):
-                        if not model_name:
-                            model_name = line.split(':')[1].strip()
-                    elif line.startswith('cache size'):
-                        if not cache_size:
-                            cache_size = line.split(':')[1].strip()
-                    elif line.startswith('cpu cores'):
-                        if not physical_cores:
-                            physical_cores = int(line.split(':')[1].strip())
-
+            model_name, cache_sizes, physical_cores, virtual_cores = self.parse_cpu_info(cpuinfo_file)
             min_allowed_freqs, max_allowed_freqs = self.get_allowed_cpu_frequency()
+            total_ram = self.read_total_ram(meminfo_file)
 
-            total_ram = None
-            try:
-                with open(meminfo_file, 'r') as file:
-                    for line in file:
-                        if line.startswith('MemTotal'):
-                            total_ram = int(line.split()[1]) // 1024  # Convert from kB to MB
-                            break
-            except Exception as e:
-                self.logger.error(f"Error reading meminfo file: {e}")
-
-            if not model_name:
-                self.logger.warning("CPU model name not found.")
-            if not cache_size:
-                self.logger.warning("CPU cache size not found.")
-            if not physical_cores:
-                self.logger.warning("Number of physical cores not found.")
-            if not min_allowed_freqs or not max_allowed_freqs:
-                self.logger.warning("Allowed CPU frequencies not found.")
-            if not total_ram:
-                self.logger.warning("Total RAM not found.")
+            # Filter out any None cache sizes
+            cache_sizes = {k: v for k, v in cache_sizes.items() if v is not None}
 
             cpu_info = {
                 "Model Name": model_name,
-                "Cache Size": cache_size,
+                "Cache Sizes": cache_sizes,
                 "Total RAM (MB)": total_ram,
                 "Min (MHz)": min_allowed_freqs,
                 "Max (MHz)": max_allowed_freqs,
@@ -175,8 +157,45 @@ class CPUManager:
             self.logger.error(f"Error retrieving CPU info: {e}")
             return None
 
-    # Apply the minimum and maximum CPU clock speed limits to each CPU thread individually
+    def parse_cpu_info(self, cpuinfo_file):
+        # Parse the CPU information file to extract model name, cache sizes, and core counts
+        model_name = None
+        cache_sizes = {"L1": None, "L2": None, "L3": None}
+        physical_cores = 0
+        virtual_cores = cpu_file_search.thread_count
+
+        with open(cpuinfo_file, 'r') as file:
+            for line in file:
+                if line.startswith('model name') and not model_name:
+                    model_name = line.split(':')[1].strip()
+                elif line.startswith('cache size') and not cache_sizes["L3"]:
+                    cache_sizes["L3"] = line.split(':')[1].strip()
+                elif 'L1d cache' in line and not cache_sizes["L1"]:
+                    cache_sizes["L1"] = line.split(':')[1].strip()
+                elif 'L2 cache' in line and not cache_sizes["L2"]:
+                    cache_sizes["L2"] = line.split(':')[1].strip()
+                elif 'L3 cache' in line and not cache_sizes["L3"]:
+                    cache_sizes["L3"] = line.split(':')[1].strip()
+                elif line.startswith('cpu cores') and not physical_cores:
+                    physical_cores = int(line.split(':')[1].strip())
+
+        return model_name, cache_sizes, physical_cores, virtual_cores
+
+    def read_total_ram(self, meminfo_file):
+        # Read the total RAM from the meminfo file
+        total_ram = None
+        try:
+            with open(meminfo_file, 'r') as file:
+                for line in file:
+                    if line.startswith('MemTotal'):
+                        total_ram = int(line.split()[1]) // 1024  # Convert from kB to MB
+                        break
+        except Exception as e:
+            self.logger.error(f"Error reading meminfo file: {e}")
+        return total_ram
+
     def apply_cpu_clock_speed_limits(self, widget=None):
+        # Apply the minimum and maximum CPU clock speed limits to each CPU thread individually
         try:
             command_list = []
 
@@ -231,34 +250,46 @@ class CPUManager:
         except Exception as e:
             self.logger.error(f"Error applying CPU clock speed limits: {e}")
 
-    # Get and update the current CPU clock speeds
-    def update_clock_speeds(self):
-        try:
-            speeds = []
-            for i in range(cpu_file_search.thread_count):
-                speed_file = cpu_file_search.cpu_files['speed_files'].get(i)
-                if speed_file and os.path.exists(speed_file):
-                    with open(speed_file, 'r') as file:
-                        speed_str = file.read().strip()
-                        if speed_str:
-                            speed = int(speed_str) / 1000  # Convert to MHz
-                            speeds.append(speed)
-                            if i in self.clock_labels:
-                                self.clock_labels[i].set_text(f"{speed:.0f} MHz")
-                            else:
-                                self.logger.error(f"No label found for thread {i}")
+    def read_cpu_speeds(self):
+        # Read the current CPU speeds from the appropriate system files
+        speeds = []
+        for i in range(cpu_file_search.thread_count):
+            speed_file = cpu_file_search.cpu_files['speed_files'].get(i)
+            if speed_file and os.path.exists(speed_file):
+                with open(speed_file, 'r') as file:
+                    speed_str = file.read().strip()
+                    if speed_str:
+                        speed = int(speed_str) / 1000  # Convert to MHz
+                        speeds.append((i, speed))
+        return speeds
 
-            if speeds:
-                average_speed = sum(speeds) / len(speeds)
-                self.average_clock_entry.set_text(f"{average_speed:.0f} MHz")
+    def update_clock_labels(self, speeds):
+        # Update the clock speed labels in the GUI
+        for i, speed in speeds:
+            if i in self.clock_labels:
+                self.clock_labels[i].set_text(f"{speed:.0f} MHz")
             else:
-                self.average_clock_entry.set_text("N/A MHz")
-                self.logger.warning("No valid CPU clock speeds found")
+                self.logger.error(f"No label found for thread {i}")
 
+    def update_average_speed(self, speeds):
+        # Update the average clock speed label in the GUI
+        if speeds:
+            average_speed = sum(speed for _, speed in speeds) / len(speeds)
+            self.average_clock_entry.set_text(f"{average_speed:.0f} MHz")
+        else:
+            self.logger.warning("No valid CPU clock speeds found")
+
+    def update_clock_speeds(self):
+        # Update the clock speeds of all CPU threads
+        try:
+            speeds = self.read_cpu_speeds()
+            self.update_clock_labels(speeds)
+            self.update_average_speed(speeds)
         except Exception as e:
             self.logger.error(f"Error updating CPU clock speeds: {e}")
 
     def read_stat_file(self):
+        # Read the CPU statistics from the stat file
         stat_file_path = cpu_file_search.proc_files['stat']
         if not stat_file_path:
             self.logger.error("Stat file not found.")
@@ -282,6 +313,7 @@ class CPUManager:
         return cpu_stats
 
     def calculate_load(self, prev_stat, curr_stat):
+        # Calculate the CPU load based on previous and current statistics
         loads = {}
         for (cpu_id, prev_user, prev_nice, prev_system, prev_idle), (_, curr_user, curr_nice, curr_system, curr_idle) in zip(prev_stat, curr_stat):
             prev_total = prev_user + prev_nice + prev_system + prev_idle
@@ -296,7 +328,29 @@ class CPUManager:
 
         return loads
 
+    def update_average_load(self, loads):
+        # Calculate and update the average CPU load
+        average_load = sum(loads.values()) / len(loads)
+        load_percentage = min(100, average_load)
+
+        model = self.average_progress_bar.get_model()
+        if int(model[0][0]) != int(load_percentage):
+            model[0][0] = int(load_percentage)
+            model[0][1] = f"{int(load_percentage)}%"
+
+    def update_thread_loads(self, loads):
+        # Update the load for each CPU thread
+        for cpu_id, load in loads.items():
+            if cpu_id.startswith('cpu') and cpu_id != 'cpu':  # Skip the aggregated 'cpu' line
+                thread_index = int(cpu_id.replace('cpu', ''))
+                if thread_index in self.progress_bars:
+                    thread_model = self.progress_bars[thread_index].get_model()
+                    if int(thread_model[0][0]) != int(load):
+                        thread_model[0][0] = int(load)
+                        thread_model[0][1] = f"{int(load)}%"
+
     def update_load(self):
+        # Update the CPU load for all threads
         try:
             curr_stat = self.read_stat_file()
             if not curr_stat:
@@ -304,56 +358,55 @@ class CPUManager:
 
             loads = self.calculate_load(self.prev_stat, curr_stat)
             if loads:
-                # Calculate average load
-                average_load = sum(loads.values()) / len(loads)
-                load_percentage = min(100, average_load)
-
-                # Update the CellRendererProgress for average load
-                model = self.average_progress_bar.get_model()
-                model[0][0] = int(load_percentage)
-                model[0][1] = f"{int(load_percentage)}%"
-
-                # Update each thread's CellRendererProgress
-                for cpu_id, load in loads.items():
-                    if cpu_id.startswith('cpu') and cpu_id != 'cpu':  # Skip the aggregated 'cpu' line
-                        thread_index = int(cpu_id.replace('cpu', ''))
-                        if thread_index in self.progress_bars:
-                            thread_model = self.progress_bars[thread_index].get_model()
-                            thread_model[0][0] = int(load)
-                            thread_model[0][1] = f"{int(load)}%"
+                self.update_average_load(loads)
+                self.update_thread_loads(loads)
 
             self.prev_stat = curr_stat
 
         except Exception as e:
             self.logger.error(f"Error updating average load: {e}")
 
-    # Read and convert the package temperature from the thermal file
-    def read_package_temperature(self):
-        try:
-            if cpu_file_search.package_temp_file:
+    def read_and_parse_temperature(self):
+        # Read and parse the CPU package temperature
+        if cpu_file_search.package_temp_file:
+            if os.path.exists(cpu_file_search.package_temp_file):
                 with open(cpu_file_search.package_temp_file, 'r') as file:
                     temp_str = file.read().strip()
-                    if not self.initial_log_done:
-                        self.logger.info(f"Raw temperature reading: {temp_str}")
                     if temp_str.isdigit():
                         temp_celsius = int(temp_str) / 1000  # Convert from millidegrees to degrees Celsius
-                        if not self.initial_log_done:
-                            self.logger.info(f"Package Temperature: {temp_celsius}°C")
-                        # Update the package temperature entry
-                        self.package_temp_entry.set_text(f"{int(temp_celsius)} °C")
-                        return temp_celsius
+                        return temp_str, temp_celsius
                     else:
                         self.logger.error("Temperature reading is not a valid number.")
-            else:
-                self.logger.error("No package temperature file found.")
+        self.logger.error("No package temperature file found.")
+        return None, None
+
+    def update_temperature_entry(self, temp_celsius):
+        # Update the temperature entry in the GUI
+        if temp_celsius is not None:
+            self.package_temp_entry.set_text(f"{int(temp_celsius)} °C")
+
+    def log_temperature(self, temp_str, temp_celsius):
+        # Log the temperature readings initially
+        if not self.initial_log_done:
+            self.logger.info(f"Raw temperature reading: {temp_str}")
+            self.logger.info(f"Package Temperature: {temp_celsius}°C")
+            self.initial_log_done = True
+
+    def read_package_temperature(self):
+        # Read the CPU package temperature and update the GUI
+        try:
+            temp_str, temp_celsius = self.read_and_parse_temperature()
+            if temp_celsius is not None:
+                self.log_temperature(temp_str, temp_celsius)
+                self.update_temperature_entry(temp_celsius)
+                return temp_celsius
         except Exception as e:
             self.logger.error(f"Error reading package temperature: {e}")
         return None
 
-    # Set CPU governor for all CPU threads
     def set_cpu_governor(self, governor):
+        # Set the CPU governor for all CPU threads
         try:
-            # Construct the command to set the governor for all CPU threads
             command_list = []
             for i in range(cpu_file_search.thread_count):
                 governor_file = cpu_file_search.cpu_files['governor_files'].get(i)
@@ -380,6 +433,7 @@ class CPUManager:
             return False
 
     def on_governor_change(self, combobox):
+        # Handle the change of CPU governor from the combobox
         try:
             model = combobox.get_model()
             active_iter = combobox.get_active_iter()
@@ -398,26 +452,27 @@ class CPUManager:
         except Exception as e:
             self.logger.error(f"An error occurred while handling CPU governor change: {e}")
 
-    # Get and update the current CPU governor
+    def read_and_get_governor(self):
+        # Read the current CPU governor from the system file
+        governor_file_path = cpu_file_search.cpu_files['governor_files'].get(0)
+        if governor_file_path and os.path.exists(governor_file_path):
+            with open(governor_file_path, 'r') as governor_file:
+                return governor_file.read().strip()
+        return None
+
     def get_current_governor(self):
+        # Get the current CPU governor and update the GUI
         try:
-            # Use the governor file from thread 0
-            governor_file_path = cpu_file_search.cpu_files['governor_files'].get(0)
-
-            # If the governor file path is found
-            if governor_file_path and os.path.exists(governor_file_path):
-                # Read the current governor and update the label
-                with open(governor_file_path, 'r') as governor_file:
-                    current_governor = governor_file.read().strip()
-                    self.current_governor_label.set_label(f"Current Governor: {current_governor}")
+            current_governor = self.read_and_get_governor()
+            if current_governor:
+                self.current_governor_label.set_label(f"Current Governor: {current_governor}")
             else:
-                self.logger.error("Governor file path not found for thread 0")
-
+                self.logger.error("Governor file path not found or could not read the governor for thread 0")
         except Exception as e:
             self.logger.error(f"Error updating CPU governor: {e}")
 
-    # Update the combobox label to the found avalible governors 
     def update_governor_combobox(self):
+        # Update the governor combobox with available governors
         model = self.governor_combobox.get_model()
         model.clear()
 
@@ -443,10 +498,9 @@ class CPUManager:
         # Set the active index to 0 which is the "Select Governor" placeholder
         self.governor_combobox.set_active(0)
 
-    # Toggle boost on or off
     def toggle_boost(self, widget=None):
+        # Toggle the CPU boost clock on or off
         try:
-            # Invert the current status to toggle
             current_status = self.read_boost_status()
             is_enabled = not current_status
 
@@ -476,21 +530,20 @@ class CPUManager:
         except Exception as e:
             self.logger.error(f"Error toggling CPU boost: {e}")
 
-    # Read the boost file to determine the checkbutton status
     def read_boost_status(self):
+        # Read the current boost status from the system file
         if cpu_file_search.cpu_type == "Intel" and cpu_file_search.intel_boost_path and os.path.exists(cpu_file_search.intel_boost_path):
             return self.read_boost_file(cpu_file_search.intel_boost_path, intel=True)
         else:
-            # Check for the first valid boost file in non-Intel CPUs
             for boost_file in cpu_file_search.cpu_files['boost_files'].values():
                 if os.path.exists(boost_file):
                     return self.read_boost_file(boost_file)
-            # If no valid files found, log and hide the checkbutton
             self.logger.info("No valid boost control files found.")
             self.boost_checkbutton.hide()
             return None
 
     def read_boost_file(self, file_path, intel=False):
+        # Read the boost file to determine the current boost status
         try:
             with open(file_path, 'r') as file:
                 content = file.read().strip()
@@ -503,8 +556,8 @@ class CPUManager:
             self.logger.info(f"Boost file not accessible at {file_path}: {e}")
             return False
 
-    # Update the boost checkbutton status
     def update_boost_checkbutton(self):
+        # Update the boost checkbutton status in the GUI
         try:
             current_status = self.read_boost_status()
             if current_status is None:
@@ -517,13 +570,14 @@ class CPUManager:
                     self.boost_checkbutton.handler_unblock_by_func(self.toggle_boost)
                 if not self.initial_log_done:
                     self.logger.info(f"Boost checkbutton status updated to reflect system status: {'enabled' if current_status else 'disabled'}.")
-                    self.initial_log_done = True  # Set the flag after the initial log
+                    self.initial_log_done = True
 
         except Exception as e:
             self.logger.error(f"Error updating boost checkbutton status: {e}")
             return None
 
     def set_intel_tdp(self, widget=None):
+        # Set the TDP (Thermal Design Power) for Intel CPUs
         try:
             if cpu_file_search.cpu_type != "Intel":
                 self.logger.error("TDP control is only supported for Intel CPUs.")
@@ -554,6 +608,7 @@ class CPUManager:
             return False
 
     def set_ryzen_tdp(self, widget=None):
+        # Set the TDP (Thermal Design Power) for AMD Ryzen CPUs
         try:
             if cpu_file_search.cpu_type != "Other":
                 self.logger.error("TDP control with ryzen_smu is only supported for AMD Ryzen CPUs.")
@@ -578,8 +633,8 @@ class CPUManager:
             self.logger.error(f"Error setting Ryzen TDP: {e}")
             return False
 
-    # Use the allowed cpu frequency files in the searched file location
     def get_allowed_cpu_frequency(self):
+        # Get the allowed CPU frequencies from the system files
         try:
             min_allowed_freqs = []
             max_allowed_freqs = []
@@ -607,6 +662,7 @@ class CPUManager:
             return None, None
 
     def get_allowed_tdp_values(self):
+        # Get the allowed TDP values for Intel CPUs
         max_tdp_file = cpu_file_search.intel_tdp_files['max_tdp']
         if not max_tdp_file or not os.path.exists(max_tdp_file):
             self.logger.error("Intel Max TDP file not found.")

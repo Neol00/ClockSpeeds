@@ -25,22 +25,38 @@ class GlobalState:
         # Initialize the logger
         self.logger = get_logger()
 
+        # Spacing used in the GUI
         self.SPACING = 5
+        
+        # Minimum and maximum scale values for CPU frequency adjustment
         self.SCALE_MIN = int(config_manager.get_setting('Settings', 'SCALE_MIN', 1))
         self.SCALE_MAX = int(config_manager.get_setting('Settings', 'SCALE_MAX', 6000))
+        
+        # Minimum and maximum scale values for TDP adjustment
         self.TDP_SCALE_MIN = int(config_manager.get_setting('Settings', 'TDP_SCALE_MIN', 1))
         self.TDP_SCALE_MAX = int(config_manager.get_setting('Settings', 'TDP_SCALE_MAX', 400))
+        
+        # Vertical offset for widget placement
         self.y_offset = 0
 
+        # Set to hold unique CPU governors
         self.unique_governors = set()
+        
+        # State of the CPU boost feature
         self.boost_enabled = None
+        
+        # Flags to control the scaling limits and synchronization
         self.disable_scale_limits = False
         self.sync_scales = False
+        
+        # Maximum TDP value
         self.max_tdp_value = None
 
+        # Call method on startup
         self.save_settings()
 
     def save_settings(self):
+        # Save the current settings to the configuration file
         try:
             if not config_manager.get_setting('Settings', 'SCALE_MIN'):
                 config_manager.set_setting('Settings', 'SCALE_MIN', str(self.SCALE_MIN))
@@ -57,7 +73,7 @@ class GlobalState:
         except Exception as e:
             self.logger.error(f"Error saving settings: {e}")
 
-# Create an instance of GlobalState
+# Create an instance of GlobalState to manage global settings
 global_state = GlobalState()
 
 class GuiComponents:
@@ -65,23 +81,28 @@ class GuiComponents:
         # Initialize the logger
         self.logger = get_logger()
 
+        # Dictionary to store GUI components
         self.components = {}
 
     def add_widget(self, name, widget):
+        # Add a widget to the components dictionary
         self.components[name] = widget
         self.logger.info(f"Added widget: {name}")
 
     def __getitem__(self, key):
+        # Retrieve a widget from the components dictionary
         return self.components.get(key)
 
     def __setitem__(self, key, value):
+        # Set a widget in the components dictionary
         self.components[key] = value
         self.logger.info(f"Set widget: {key}")
 
     def __delitem__(self, key):
+        # Delete a widget from the components dictionary
         if key in self.components:
             del self.components[key]
             self.logger.info(f"Deleted widget: {key}")
 
-# Create an instance of GuiComponents
+# Create an instance of GuiComponents to manage GUI components
 gui_components = GuiComponents()

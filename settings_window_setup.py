@@ -34,11 +34,13 @@ class SettingsWindow:
         # Initialize the logger
         self.logger = get_logger()
 
+        # Create the settings window
         self.settings_window = Gtk.Window(title="Settings")
         self.settings_window.set_default_size(200, 200)
         self.settings_window.set_resizable(False)
         self.settings_window.connect("delete-event", self.close_settings_window)
 
+        # Call methods on startup
         self.setup_main_settings_box()
         self.create_settings_notebook()
         self.create_settings_tabs()
@@ -47,6 +49,7 @@ class SettingsWindow:
         self.update_enhanced_control_checkbutton()
 
     def setup_main_settings_box(self):
+        # Setup the main settings box
         try:
             self.main_settings_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=global_state.SPACING)
             self.settings_window.add(self.main_settings_box)
@@ -54,12 +57,14 @@ class SettingsWindow:
             self.logger.error(f"Error setting up main settings box: {e}")
 
     def create_settings_notebook(self):
+        # Create the settings notebook
         try:
             self.notebook = widget_factory.create_notebook(self.main_settings_box)
         except Exception as e:
             self.logger.error(f"Error creating settings notebook: {e}")
 
     def create_settings_tabs(self):
+        # Create the general and theme tabs
         try:
             self.general_tab = widget_factory.create_settings_tab(self.notebook, "General")
             self.css_tab = widget_factory.create_settings_tab(self.notebook, "Theme")
@@ -67,37 +72,46 @@ class SettingsWindow:
             self.logger.error(f"Error creating settings tabs: {e}")
 
     def setup_settings_gui(self):
+        # Setup the settings GUI components
         try:
             self.general_fixed = Gtk.Fixed()
             self.general_tab.add(self.general_fixed)
 
+            # Create the disable scale limits checkbutton
             self.disable_scale_limits_checkbutton = widget_factory.create_checkbutton(
                 self.general_fixed, "Disable Scale Limits", global_state.disable_scale_limits, scale_manager.on_disable_scale_limits_change, x=5, y=10)
 
+            # Create the info button for the disable scale limits checkbutton
             info_button_scale = widget_factory.create_info_button(
                 self.general_fixed, self.show_scale_info_dialog, x=150, y=10)
             
+            # Create the sync scales checkbutton
             self.sync_scales_checkbutton = widget_factory.create_checkbutton(
                 self.general_fixed, "Sync All Scales", global_state.sync_scales, scale_manager.on_sync_scales_change, x=5, y=40)
 
+            # Create the info button for the sync scales checkbutton
             info_button_sync = widget_factory.create_info_button(
                 self.general_fixed, self.show_sync_info_dialog, x=150, y=40)
 
+            # Create the enhanced control checkbutton
             is_installed = ryzen_smu_installer.is_ryzen_smu_installed()
             self.enhanced_control_checkbutton = widget_factory.create_checkbutton(
                 self.general_fixed, "Enhanced Ryzen Control", is_installed, self.show_enhanced_control_warning_dialog, x=5, y=70)
             self.enhanced_control_checkbutton.set_sensitive(not is_installed)
 
+            # Create the update interval label and spinbutton
             interval_label = widget_factory.create_label(
                 self.general_fixed, "Update Interval Seconds:", x=20, y=100)
 
             interval_spinbutton = widget_factory.create_spinbutton(
                 self.general_fixed, cpu_manager.update_interval, 0.1, 20.0, 0.1, 1, 0.1, 1, self.on_interval_changed, x=45, y=120)
 
+            # Create the CSS combobox
             css_values = css_manager.get_installed_gtk_css()
             self.css_combobox = widget_factory.create_combobox(
                 self.css_tab, css_values, self.on_css_change, x=0, y=0)
 
+            # Set the active CSS theme
             saved_css = css_manager.load_css_config()
             if saved_css in css_values:
                 active_index = css_values.index(saved_css)
@@ -106,6 +120,7 @@ class SettingsWindow:
             self.logger.error(f"Error setting up settings window GUI: {e}")
 
     def open_settings_window(self, widget=None, data=None):
+        # Open the settings window
         try:
             if not self.settings_window.get_visible():
                 self.settings_window.show_all()
@@ -115,6 +130,7 @@ class SettingsWindow:
             self.logger.error(f"Error opening settings window: {e}")
 
     def close_settings_window(self, *args):
+        # Close the settings window
         try:
             self.settings_window.hide()
             return True
@@ -122,6 +138,7 @@ class SettingsWindow:
             self.logger.error(f"Error closing settings window: {e}")
 
     def add_settings_widgets_to_gui_components(self):
+        # Add the settings widgets to the GUI components dictionary
         try:
             gui_components['disable_scale_limits_checkbutton'] = self.disable_scale_limits_checkbutton
             gui_components['sync_scales_checkbutton'] = self.sync_scales_checkbutton
@@ -132,6 +149,7 @@ class SettingsWindow:
             self.logger.error(f"Error adding settings widget to gui_components: {e}")
 
     def show_scale_info_dialog(self, widget):
+        # Show the information dialog for the disable scale limits checkbutton
         try:
             dialog = Gtk.MessageDialog(
                 transient_for=self.settings_window,
@@ -149,6 +167,7 @@ class SettingsWindow:
             self.logger.error(f"Error showing scale info dialog: {e}")
 
     def show_sync_info_dialog(self, widget):
+        # Show the information dialog for the sync scales checkbutton
         try:
             dialog = Gtk.MessageDialog(
                 transient_for=self.settings_window,
@@ -166,10 +185,12 @@ class SettingsWindow:
             self.logger.error(f"Error showing sync info dialog: {e}")
 
     def on_interval_changed(self, spinbutton):
+        # Update the interval value when the spinbutton value changes
         new_interval = round(spinbutton.get_value(), 1)
         cpu_manager.set_update_interval(new_interval)
 
     def on_css_change(self, combo):
+        # Handle the change of CSS theme from the combobox
         try:
             model = combo.get_model()
             iter = combo.get_active_iter()
@@ -185,6 +206,7 @@ class SettingsWindow:
             self.logger.error(f"Error changing css: {e}")
 
     def show_enhanced_control_warning_dialog(self, widget):
+        # Show the warning dialog for enabling enhanced Ryzen control
         try:
             dialog = Gtk.MessageDialog(
                 transient_for=self.settings_window,
@@ -215,6 +237,7 @@ class SettingsWindow:
             self.logger.error(f"Error showing enhanced control warning dialog: {e}")
 
     def enable_enhanced_control(self):
+        # Enable enhanced control for Ryzen CPUs
         self.enhanced_control_checkbutton.set_sensitive(False)
         Gtk.main_iteration()  # Process events to update UI
         if ryzen_smu_installer.enable_enhanced_control():
@@ -239,6 +262,7 @@ class SettingsWindow:
             self.enhanced_control_checkbutton.set_sensitive(True)
 
     def update_enhanced_control_checkbutton(self):
+        # Update the status of the enhanced control checkbutton
         is_installed = ryzen_smu_installer.is_ryzen_smu_installed()
         self.enhanced_control_checkbutton.handler_block_by_func(self.show_enhanced_control_warning_dialog)
         self.enhanced_control_checkbutton.set_active(is_installed)

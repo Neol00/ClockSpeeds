@@ -25,10 +25,14 @@ from shared import global_state
 
 class WidgetFactory:
     def __init__(self, spacing=global_state.SPACING):
+        # Initialize the logger
         self.logger = get_logger()
+        
+        # Setup the default spacing for widgets
         self.spacing = spacing
 
     def create_grid(self):
+        # Create a new Gtk.Grid widget
         try:
             grid = Gtk.Grid()
             return grid
@@ -37,6 +41,7 @@ class WidgetFactory:
             return None
 
     def create_notebook(self, parent):
+        # Create a new Gtk.Notebook widget and add it to the parent container
         try:
             notebook = Gtk.Notebook()
             parent.pack_start(notebook, expand=True, fill=True, padding=self.spacing)
@@ -47,6 +52,7 @@ class WidgetFactory:
             return None
 
     def create_tab(self, notebook, tab_name):
+        # Create a new tab for the Gtk.Notebook widget
         try:
             scrolled_window = Gtk.ScrolledWindow()
             scrolled_window.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
@@ -70,6 +76,7 @@ class WidgetFactory:
             return None
 
     def create_settings_tab(self, notebook, settings_tab_name):
+        # Create a new settings tab for the Gtk.Notebook widget
         try:
             settings_tab = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
             settings_tab.set_border_width(10)
@@ -84,6 +91,7 @@ class WidgetFactory:
             return None
 
     def create_about_tab(self, notebook, about_tab_name):
+        # Create a new about tab for the Gtk.Notebook widget
         try:
             about_tab = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
             about_tab.set_border_width(10)
@@ -98,6 +106,7 @@ class WidgetFactory:
             return None
 
     def create_label(self, container, text=None, markup=None, style=None, x=0, y=0, **kwargs):
+        # Create a new Gtk.Label widget and add it to the container
         try:
             label = Gtk.Label()
             if markup:
@@ -114,6 +123,7 @@ class WidgetFactory:
             return None
 
     def create_entry(self, container, text="N/A MHz", editable=False, width_chars=10, x=0, y=0, **kwargs):
+        # Create a new Gtk.Entry widget and add it to the container
         try:
             entry = Gtk.Entry()
             entry.set_text(text)
@@ -134,6 +144,7 @@ class WidgetFactory:
             return None
 
     def create_cellrendererprogress(self, container, x=0, y=0, **kwargs):
+        # Create a new Gtk.CellRendererProgress widget and add it to the container
         try:
             list_store = Gtk.ListStore(int, str)
             list_store.append([0, "0%"])
@@ -159,6 +170,7 @@ class WidgetFactory:
             return None
 
     def create_scale(self, container, command, from_value, to_value, x=0, y=0, **kwargs):
+        # Create a new Gtk.Scale widget and add it to the container
         try:
             adjustment = Gtk.Adjustment(lower=from_value, upper=to_value)
             scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=adjustment)
@@ -175,6 +187,7 @@ class WidgetFactory:
             return None
 
     def create_button(self, container, text, command=None, press_event=None, release_event=None, x=0, y=0, **kwargs):
+        # Create a new Gtk.Button widget and add it to the container
         try:
             button = Gtk.Button(label=text)
             if command:
@@ -190,6 +203,7 @@ class WidgetFactory:
             return None
 
     def create_info_button(self, container, callback, x=0, y=0):
+        # Create a new info button (Gtk.Button) with an information icon and add it to the container
         try:
             button = Gtk.Button()
             button.connect("clicked", callback)
@@ -205,6 +219,7 @@ class WidgetFactory:
             return None
 
     def create_spinbutton(self, container, value, lower, upper, step_increment, page_increment, climb_rate, digits, command=None, x=0, y=0, **kwargs):
+        # Create a new Gtk.SpinButton widget and add it to the container
         try:
             adjustment = Gtk.Adjustment(value=value, lower=lower, upper=upper, step_increment=step_increment, page_increment=page_increment)
             spinbutton = Gtk.SpinButton(adjustment=adjustment, climb_rate=climb_rate, digits=digits)
@@ -220,6 +235,7 @@ class WidgetFactory:
             return None
 
     def create_combobox(self, container, values, command, style=None, x=0, y=0, **kwargs):
+        # Create a new Gtk.ComboBox widget and add it to the container
         try:
             store = Gtk.ListStore(str)
             for val in values:
@@ -239,6 +255,7 @@ class WidgetFactory:
             return None
 
     def create_checkbutton(self, container, text, variable, command=None, style=None, x=0, y=0, **kwargs):
+        # Create a new Gtk.CheckButton widget and add it to the container
         try:
             checkbutton = Gtk.CheckButton(label=text)
             if command is not None:
@@ -253,6 +270,7 @@ class WidgetFactory:
             return None
 
     def _attach_widget(self, container, widget, x=0, y=0):
+        # Attach a widget to the given container
         try:
             if widget.get_parent() is not None:
                 self.logger.warning("Widget already has a parent and won't be reattached.")
@@ -276,6 +294,7 @@ class WidgetFactory:
             self.logger.error("Failed to attach widget: %s", e)
 
     def _set_margins(self, widget, **kwargs):
+        # Set margins for a widget if specified in kwargs
         margin_properties = {
             'margin_start': widget.set_margin_start,
             'margin_end': widget.set_margin_end,
@@ -286,4 +305,5 @@ class WidgetFactory:
             if prop in kwargs and kwargs[prop] is not None:
                 setter(kwargs[prop])
 
+# Create an instance of WidgetFactory
 widget_factory = WidgetFactory()

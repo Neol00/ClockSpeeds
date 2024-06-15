@@ -25,6 +25,7 @@ from log_setup import get_logger
 from config_setup import config_manager
 
 class CssManager:
+    # Default system CSS to ensure consistent look
     CSS_SYSTEM = """
         * {
             font-family: 'System-ui';
@@ -106,13 +107,17 @@ class CssManager:
         # Initialize the logger
         self.logger = get_logger()
 
+        # Create a CSS provider for applying styles
         self.css_provider = Gtk.CssProvider()
+
+        # Get the list of valid CSS themes installed on the system
         self.valid_css_themes = self.get_installed_gtk_css()
 
+        # Apply the default system CSS on startup
         self.apply_css(self.CSS_SYSTEM)
 
     def apply_css(self, css_data):
-        # Apply the provided CSS data
+        # Apply the provided CSS data to the application
         self.css_provider.load_from_data(css_data.encode())
         Gtk.StyleContext.add_provider_for_screen(
             Gdk.Screen.get_default(),
@@ -133,9 +138,11 @@ class CssManager:
             self.logger.error(f"Error applying css: {e}")
 
     def is_valid_css(self, css_name):
+        # Check if the provided CSS name is a valid installed theme
         return css_name in self.valid_css_themes
 
     def save_css_config(self, css_name):
+        # Save the selected CSS theme to the configuration file
         try:
             if self.is_valid_css(css_name):
                 config_manager.set_setting('CSS', 'selectedcss', css_name)
@@ -145,6 +152,7 @@ class CssManager:
             self.logger.error(f"Error saving CSS configuration: {e}")
 
     def load_css_config(self):
+        # Load the selected CSS theme from the configuration file
         try:
             css_name = config_manager.get_setting('CSS', 'selectedcss', default=None)
             if not self.is_valid_css(css_name):
@@ -154,6 +162,7 @@ class CssManager:
             self.logger.error(f"Error loading CSS configuration: {e}")
 
     def get_installed_gtk_css(self):
+        # Get a list of installed GTK themes by searching the theme directories
         try:
             theme_dirs = ['/usr/share/themes', os.path.expanduser('~/.themes')]
             themes = set()

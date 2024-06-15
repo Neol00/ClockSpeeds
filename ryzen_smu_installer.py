@@ -28,9 +28,11 @@ class RyzenSmuInstaller:
         # Initialize the logger
         self.logger = get_logger()
 
+        # List of dependencies required for building and installing the module
         self.dependencies = ["git", "dkms", "base-devel"]
 
     def detect_package_manager(self):
+        # Detect the package manager for the system
         package_managers = {
             "pacman": ["pacman", "-Sy", "--noconfirm"]
         }
@@ -40,6 +42,7 @@ class RyzenSmuInstaller:
         return None, None
 
     def install_dependencies(self, package_manager, install_command):
+        # Install the required dependencies using the detected package manager
         commands = []
         for dep in self.dependencies:
             result = subprocess.run(["which", dep], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -64,11 +67,13 @@ class RyzenSmuInstaller:
         return True
 
     def get_running_kernel(self):
+        # Get the name of the currently running kernel
         kernel_name = subprocess.run(["uname", "-r"], stdout=subprocess.PIPE, text=True).stdout.strip()
         self.logger.info(f"Running kernel: {kernel_name}")
         return kernel_name
 
     def get_kernel_headers_package(self, kernel_name):
+        # Determine the appropriate kernel headers package based on the kernel name
         if 'zen' in kernel_name:
             return 'linux-zen-headers'
         elif 'hardened' in kernel_name:
@@ -79,6 +84,7 @@ class RyzenSmuInstaller:
             return 'linux-headers'
 
     def check_and_install_dependencies(self):
+        # Check and install the required dependencies
         package_manager, install_command = self.detect_package_manager()
         if package_manager is None:
             self.logger.error("No compatible package manager found.")
@@ -87,6 +93,7 @@ class RyzenSmuInstaller:
         return self.install_dependencies(package_manager, install_command)
 
     def clone_repository(self, repo_url, dest_dir):
+        # Clone the specified Git repository to the destination directory
         if not os.path.exists(dest_dir):
             os.makedirs(dest_dir)
         result = subprocess.run(["git", "clone", repo_url, dest_dir], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -97,6 +104,7 @@ class RyzenSmuInstaller:
         return True
 
     def install_module(self, src_dir):
+        # Install the DKMS module from the source directory
         try:
             # Run the make dkms-install command inside the ryzen_smu directory
             success, error = privileged_actions.run_pkexec_command(["make", "dkms-install"], cwd=src_dir)
@@ -111,6 +119,7 @@ class RyzenSmuInstaller:
             return False
 
     def enable_enhanced_control(self):
+        # Enable enhanced control for Ryzen CPUs by installing the ryzen_smu module
         repo_url = "https://github.com/leogx9r/ryzen_smu.git"
         dest_dir = os.path.join(os.path.dirname(__file__), "ryzen_smu")
         
@@ -130,12 +139,9 @@ class RyzenSmuInstaller:
         return True
 
     def is_ryzen_smu_installed(self):
+        # Check if the ryzen_smu module is installed using DKMS
         result = subprocess.run(["dkms", "status", "ryzen_smu"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         return "installed" in result.stdout.decode()
-
-    def disable_enhanced_control(self):
-        self.logger.info("Enhanced Ryzen control disabled.")
-        return True
 
 # Create an instance of the RyzenSmuInstaller
 ryzen_smu_installer = RyzenSmuInstaller()

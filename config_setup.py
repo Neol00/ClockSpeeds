@@ -22,7 +22,10 @@ import logging
 
 class ConfigManager:
     def __init__(self, config_dir=None, config_file='config.ini'):
+        # Initialize the logger
         self.logger = logging.getLogger(__name__)
+        
+        # Set default configuration directory if not provided
         if config_dir is None:
             config_dir = Path.home() / '.config' / 'ClockSpeeds'
         self.config_dir = Path(config_dir)
@@ -36,9 +39,11 @@ class ConfigManager:
             raise
 
     def load_config(self):
+        # Load the configuration file
         self.config = configparser.ConfigParser()
         try:
             if not self.config.read(self.config_file_path):
+                # Create a new configuration file if it doesn't exist
                 self.logger.info("No configuration file found, creating a new one.")
                 self.save_config()
         except configparser.Error as e:
@@ -46,6 +51,7 @@ class ConfigManager:
             raise
 
     def save_config(self):
+        # Save the current configuration to the file
         try:
             with self.config_file_path.open('w') as configfile:
                 self.config.write(configfile)
@@ -55,6 +61,7 @@ class ConfigManager:
             raise
 
     def get_setting(self, section, option, default=None):
+        # Get a configuration setting, returning a default value if the setting is not found
         if not hasattr(self, 'config'):
             self.load_config()
         try:
@@ -64,6 +71,7 @@ class ConfigManager:
             return default
 
     def set_setting(self, section, option, value):
+        # Set a configuration setting and save it to the file
         if not hasattr(self, 'config'):
             self.load_config()
 

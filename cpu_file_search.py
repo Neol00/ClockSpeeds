@@ -25,13 +25,25 @@ class CPUFileSearch:
         # Initialize the logger
         self.logger = get_logger()
 
+        # Get the total number of CPU threads
         self.thread_count = os.cpu_count()
-        self.cpu_type = None  # 'Intel' or 'Other'
+        
+        # Determine CPU type: 'Intel' or 'Other'
+        self.cpu_type = None  
+        
+        # Path to the Intel boost file
         self.intel_boost_path = None
+        
+        # Path to the package temperature file
         self.package_temp_file = None
+        
+        # Dictionary to hold paths to /proc files
         self.proc_files = {'stat': None, 'cpuinfo': None, 'meminfo': None}
+        
+        # Dictionary to hold paths to Intel TDP files
         self.intel_tdp_files = {'tdp': None, 'max_tdp': None}
         
+        # File paths for various CPU files
         self.file_paths = {
             'governor_files': "scaling_governor",
             'speed_files': "scaling_cur_freq",
@@ -43,11 +55,14 @@ class CPUFileSearch:
             'boost_files': "boost"
         }
         
+        # Dictionary to hold found CPU files
         self.cpu_files = {key: {} for key in self.file_paths.keys()}
         
+        # Initialize the search for CPU files
         self.initialize_cpu_files()
 
     def find_cpu_directory(self, base_path='/sys/'):
+        # Find the directory that contains CPU-related files
         try:
             for root, dirs, files in os.walk(base_path):
                 if 'intel_pstate' in dirs and 'cpu' in root:
@@ -63,6 +78,7 @@ class CPUFileSearch:
         return None
 
     def search_for_no_turbo(self, intel_base_path):
+        # Search for the no_turbo file for Intel CPUs
         potential_path = os.path.join(intel_base_path, 'intel_pstate', 'no_turbo')
         if os.path.exists(potential_path):
             self.intel_boost_path = potential_path
@@ -71,6 +87,7 @@ class CPUFileSearch:
             self.logger.warning('Intel no_turbo file does not exist.')
 
     def find_cpu_files(self, thread_index):
+        # Find CPU-related files for a specific thread
         cpu_files_directory = self.find_cpu_directory()
         if cpu_files_directory is None:
             self.logger.warning('Failed to find the CPU files directory.')
@@ -86,9 +103,12 @@ class CPUFileSearch:
             if os.path.exists(file_path):
                 self.cpu_files[file_key][thread_index] = file_path
             else:
-                self.logger.warning(f'File {file_name} for thread {thread_index} does not exist.')
+                # Log a warning only if the CPU type is not Intel or the file is not the boost file
+                if not (self.cpu_type == "Intel" and file_name == "boost"):
+                    self.logger.warning(f'File {file_name} for thread {thread_index} does not exist.')
 
     def find_proc_files(self, base_path='/proc/'):
+        # Find necessary /proc files
         proc_file_names = ['stat', 'cpuinfo', 'meminfo']
         
         try:
@@ -107,6 +127,7 @@ class CPUFileSearch:
                 self.logger.warning(f'{key} file not found in /proc/')
 
     def find_thermal_file(self):
+        # Find the thermal file for temperature monitoring
         potential_paths = [
             '/sys/class/',
             '/sys/devices/',
@@ -140,6 +161,7 @@ class CPUFileSearch:
             self.logger.warning('No thermal files found for non-Intel CPU.')
 
     def find_intel_tdp_files(self):
+        # Find the Intel TDP control files
         if self.cpu_type != "Intel":
             return
 
@@ -164,10 +186,12 @@ class CPUFileSearch:
                 self.logger.warning(f'Intel {key} file not found.')
 
     def initialize_cpu_files(self):
+        # Initialize the search for all necessary CPU files
         for i in range(self.thread_count):
             self.find_cpu_files(i)
         self.find_thermal_file()
         self.find_proc_files()
         self.find_intel_tdp_files()
 
+# Create an instance of CPUFileSearch
 cpu_file_search = CPUFileSearch()

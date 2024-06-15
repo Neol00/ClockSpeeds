@@ -30,15 +30,15 @@ class Launcher:
         self.logger = get_logger()
         self.script_dir = os.path.dirname(os.path.abspath(__file__))  # Directory of this script
 
-    # Check if the current environment is safe for execution
     def is_safe_environment(self):
+        # Check if the current environment is safe for execution
         if os.geteuid() == 0:
             self.logger.warning("Running as root is not allowed.")
             return False
         return True
 
-    # Ensures that the script is running in a compatible Python environment
     def validate_python_version(self):
+        # Ensures that the script is running in a compatible Python environment
         min_version = (3, 6)
         if sys.version_info < min_version:
             self.logger.error(f"Python {min_version[0]}.{min_version[1]} or later is required.")
@@ -46,6 +46,7 @@ class Launcher:
         return True
 
     def is_cache_outdated(self, pycache_path):
+        # Checks if the cache is from a different python version
         try:
             for root, dirs, files in os.walk(pycache_path):
                 for file in files:
@@ -73,6 +74,7 @@ class Launcher:
             self.logger.error(f"Failed to check whether __pycache__ is outdated : {e}")
 
     def clear_pycache(self, pycache_path='./__pycache__'):
+        # Clears the cache if the application is run on a different version
         if os.path.exists(pycache_path) and self.is_cache_outdated(pycache_path):
             try:
                 shutil.rmtree(pycache_path)
@@ -80,8 +82,8 @@ class Launcher:
             except Exception as e:
                 self.logger.error(f"Failed to clear outdated __pycache__: {e}")
 
-    # Launches the main application script securely
     def launch_main_application(self):
+        # Launches the main application script securely
         main_script_path = os.path.join(self.script_dir, 'main.py')  # Path to the main application script
 
         try:
@@ -94,8 +96,8 @@ class Launcher:
         except Exception as e:
             self.logger.error(f"Failed to launch the main application: {e}")
 
-    # Main function to perform checks and launch the application
     def run(self):
+        # Main function to perform checks and launch the application
         if not self.is_safe_environment() or not self.validate_python_version():
             sys.exit(1)  # Exit if the environment is not safe or the Python version is incompatible
 

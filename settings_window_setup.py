@@ -217,18 +217,22 @@ class SettingsWindow:
             )
             dialog.format_secondary_text(
                 "This option requires the installation of ryzen_smu. "
-                "It will also require installing other dependencies."
-                "This program does not provide a way to uninstall ryzen_smu."
-                "You can also install ryzen_smu manually to enable this feature."
+                "It will also require installing other dependencies. "
+                "This program does not provide a way to uninstall ryzen_smu. "
+                "You can also install ryzen_smu manually to enable this feature. "
                 "Are you sure that you want to continue?"
             )
+
+            # Run the dialog and capture the response
             response = dialog.run()
             dialog.destroy()
 
             if response == Gtk.ResponseType.YES:
+                # If the user confirms, enable enhanced control
                 self.logger.info("User confirmed to enable enhanced Ryzen control.")
                 self.enable_enhanced_control()
             else:
+                # If the user cancels, reset the checkbutton state
                 self.logger.info("User canceled enabling enhanced Ryzen control.")
                 widget.handler_block_by_func(self.show_enhanced_control_warning_dialog)
                 widget.set_active(False)
@@ -237,29 +241,39 @@ class SettingsWindow:
             self.logger.error(f"Error showing enhanced control warning dialog: {e}")
 
     def enable_enhanced_control(self):
-        # Enable enhanced control for Ryzen CPUs
-        self.enhanced_control_checkbutton.set_sensitive(False)
-        Gtk.main_iteration()  # Process events to update UI
-        if ryzen_smu_installer.enable_enhanced_control():
-            Gtk.MessageDialog(
-                self.settings_window,
-                0,
-                Gtk.MessageType.INFO,
-                Gtk.ButtonsType.OK,
-                "Enhanced Ryzen Control enabled successfully.",
-            ).run()
-            self.enhanced_control_checkbutton.set_active(True)
+        # Enable enhanced control for Ryzen CPUs by installing ryzen_smu
+        try:
+            # Disable the checkbutton to prevent further interactions during the process
             self.enhanced_control_checkbutton.set_sensitive(False)
-        else:
-            Gtk.MessageDialog(
-                self.settings_window,
-                0,
-                Gtk.MessageType.ERROR,
-                Gtk.ButtonsType.OK,
-                "Failed to enable Enhanced Ryzen Control.",
-            ).run()
-            self.enhanced_control_checkbutton.set_active(False)
-            self.enhanced_control_checkbutton.set_sensitive(True)
+            Gtk.main_iteration()  # Process events to update the UI
+
+            # Attempt to enable enhanced control using ryzen_smu_installer
+            if ryzen_smu_installer.enable_enhanced_control():
+                # Show a success message dialog if enhanced control is enabled successfully
+                Gtk.MessageDialog(
+                    self.settings_window,
+                    0,
+                    Gtk.MessageType.INFO,
+                    Gtk.ButtonsType.OK,
+                    "Enhanced Ryzen Control enabled successfully.",
+                ).run()
+                # Update the checkbutton to reflect the new state
+                self.enhanced_control_checkbutton.set_active(True)
+                self.enhanced_control_checkbutton.set_sensitive(False)
+            else:
+                # Show an error message dialog if enabling enhanced control fails
+                Gtk.MessageDialog(
+                    self.settings_window,
+                    0,
+                    Gtk.MessageType.ERROR,
+                    Gtk.ButtonsType.OK,
+                    "Failed to enable Enhanced Ryzen Control.",
+                ).run()
+                # Re-enable the checkbutton to allow further attempts
+                self.enhanced_control_checkbutton.set_active(False)
+                self.enhanced_control_checkbutton.set_sensitive(True)
+        except Exception as e:
+            self.logger.error(f"Error enabling Ryzen enhanced control: {e}")
 
     def update_enhanced_control_checkbutton(self):
         # Update the status of the enhanced control checkbutton

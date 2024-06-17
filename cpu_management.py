@@ -42,8 +42,8 @@ class CPUManager:
             'userspace'
         ])
 
-        # Flag to track initial logging
-        self.initial_log_done = False
+        # Keep track if CPU is currently throttling
+        self.prev_package_throttle_time = [None] * cpu_file_search.thread_count
 
         # Initialize dictionaries for GUI components
         self.clock_labels = {}
@@ -61,7 +61,8 @@ class CPUManager:
         self.boost_checkbutton = None
         self.tdp_scale = None
 
-        self.periodic_task_id = None
+        self.monitor_task_id = None
+        self.control_task_id = None
 
         # Load update interval from config or use default
         self.update_interval = float(config_manager.get_setting("Settings", "updateinterval", "1.0"))
@@ -70,39 +71,64 @@ class CPUManager:
         self.prev_stat = self.read_stat_file()
 
         # Call method on startup
-        self.schedule_periodic_tasks()
+        self.schedule_monitor_tasks()
 
-    def schedule_periodic_tasks(self):
-        # Schedule the periodic tasks with the specified update interval
-        if self.periodic_task_id:
-            GLib.source_remove(self.periodic_task_id)
-        self.periodic_task_id = GLib.timeout_add(int(self.update_interval * 1000), self.run_periodic_tasks)
+    def schedule_monitor_tasks(self):
+        # Schedule the periodic tasks for the monitor tab with the specified update interval
+        if self.monitor_task_id:
+            GLib.source_remove(self.monitor_task_id)
+        self.monitor_task_id = GLib.timeout_add(int(self.update_interval * 1000), self.run_monitor_tasks)
 
-    def stop_periodic_tasks(self):
-        # Stop the periodic tasks if they are running
-        if self.periodic_task_id:
-            GLib.source_remove(self.periodic_task_id)
-            self.periodic_task_id = None
+    def stop_monitor_tasks(self):
+        # Stop the periodic tasks for the monitor tab if they are running
+        if self.monitor_task_id:
+            GLib.source_remove(self.monitor_task_id)
+            self.monitor_task_id = None
 
-    def run_periodic_tasks(self):
-        # Run the periodic tasks to update the CPU information
+    def schedule_control_tasks(self):
+        # Schedule the periodic tasks for the control tab with the specified update interval
+        if self.control_task_id:
+            GLib.source_remove(self.control_task_id)
+        self.control_task_id = GLib.timeout_add(int(self.update_interval * 1000), self.run_control_tasks)
+
+    def stop_control_tasks(self):
+        # Stop the periodic tasks for the control tab if they are running
+        if self.control_task_id:
+            GLib.source_remove(self.control_task_id)
+            self.control_task_id = None
+
+    def run_monitor_tasks(self):
+        # Execute the monitor tasks periodically
         try:
             self.update_clock_speeds()
             self.update_load()
             self.read_package_temperature()
             self.get_current_governor()
+            self.update_thermal_throttle()
+        except Exception as e:
+            self.logger.error("Failed to run monitor tasks: %s", e)
+        # Only reschedule if the task ID is still valid (i.e., periodic tasks haven't been stopped)
+        if self.monitor_task_id:
+            self.schedule_monitor_tasks()
+        return False  # Prevent automatic re-scheduling by GLib
+
+    def run_control_tasks(self):
+        # Execute the control tasks periodically
+        try:
             self.update_boost_checkbutton()
         except Exception as e:
-            self.logger.error("Failed to run periodic tasks: %s", e)
-        self.schedule_periodic_tasks()
-        return False  # Do not re-run this method automatically, rescheduling is handled explicitly
+            self.logger.error("Failed to run control tasks: %s", e)
+        if self.control_task_id:
+            self.schedule_control_tasks()
+        return False  # Prevent automatic re-scheduling by GLib
 
     def set_update_interval(self, interval):
         # Set the update interval for periodic tasks and save it in the config
         self.update_interval = round(max(0.1, min(20.0, interval)), 1)
         self.logger.info(f"Update interval set to {self.update_interval} seconds")
         config_manager.set_setting("Settings", "updateinterval", f"{self.update_interval:.1f}")
-        self.schedule_periodic_tasks()
+        self.schedule_monitor_tasks()
+        self.schedule_control_tasks()
 
     def setup_gui_components(self):
         # Set up references to GUI components from the shared dictionary
@@ -113,6 +139,7 @@ class CPUManager:
             self.average_progress_bar = gui_components['average_progress_bar']
             self.package_temp_entry = gui_components['package_temp_entry']
             self.current_governor_label = gui_components['current_governor_label']
+            self.thermal_throttle_label = gui_components['thermal_throttle_label']
             self.cpu_min_max_checkbuttons = gui_components['cpu_min_max_checkbuttons']
             self.min_scales = gui_components['cpu_min_scales']
             self.max_scales = gui_components['cpu_max_scales']
@@ -127,6 +154,7 @@ class CPUManager:
         try:
             cpuinfo_file = cpu_file_search.proc_files['cpuinfo']
             meminfo_file = cpu_file_search.proc_files['meminfo']
+
             if not cpuinfo_file:
                 self.logger.error("cpuinfo file not found.")
                 return
@@ -134,13 +162,19 @@ class CPUManager:
                 self.logger.error("meminfo file not found.")
                 return
 
+            # Parse the CPU information
             model_name, cache_sizes, physical_cores, virtual_cores = self.parse_cpu_info(cpuinfo_file)
+            
+            # Get the allowed CPU frequencies
             min_allowed_freqs, max_allowed_freqs = self.get_allowed_cpu_frequency()
+            
+            # Read the total RAM from the meminfo file
             total_ram = self.read_total_ram(meminfo_file)
 
             # Filter out any None cache sizes
             cache_sizes = {k: v for k, v in cache_sizes.items() if v is not None}
 
+            # Create a dictionary with the CPU information
             cpu_info = {
                 "Model Name": model_name,
                 "Cache Sizes": cache_sizes,
@@ -159,27 +193,37 @@ class CPUManager:
 
     def parse_cpu_info(self, cpuinfo_file):
         # Parse the CPU information file to extract model name, cache sizes, and core counts
-        model_name = None
-        cache_sizes = {"L1": None, "L2": None, "L3": None}
-        physical_cores = 0
-        virtual_cores = cpu_file_search.thread_count
+        try:
+            model_name = None  # To store the CPU model name
+            cache_sizes = {"L1": None, "L2": None, "L3": None}  # Dictionary to store cache sizes
+            physical_cores = 0  # To store the number of physical cores
+            virtual_cores = cpu_file_search.thread_count  # Number of virtual cores (threads)
 
-        with open(cpuinfo_file, 'r') as file:
-            for line in file:
-                if line.startswith('model name') and not model_name:
-                    model_name = line.split(':')[1].strip()
-                elif line.startswith('cache size') and not cache_sizes["L3"]:
-                    cache_sizes["L3"] = line.split(':')[1].strip()
-                elif 'L1d cache' in line and not cache_sizes["L1"]:
-                    cache_sizes["L1"] = line.split(':')[1].strip()
-                elif 'L2 cache' in line and not cache_sizes["L2"]:
-                    cache_sizes["L2"] = line.split(':')[1].strip()
-                elif 'L3 cache' in line and not cache_sizes["L3"]:
-                    cache_sizes["L3"] = line.split(':')[1].strip()
-                elif line.startswith('cpu cores') and not physical_cores:
-                    physical_cores = int(line.split(':')[1].strip())
+            # Open the cpuinfo file and read line by line
+            with open(cpuinfo_file, 'r') as file:
+                for line in file:
+                    # Extract the model name
+                    if line.startswith('model name') and not model_name:
+                        model_name = line.split(':')[1].strip()
+                    # Extract the L3 cache size
+                    elif line.startswith('cache size') and not cache_sizes["L3"]:
+                        cache_sizes["L3"] = line.split(':')[1].strip()
+                    # Extract the cache sizes
+                    elif 'L1d cache' in line and not cache_sizes["L1"]:
+                        cache_sizes["L1"] = line.split(':')[1].strip()
+                    elif 'L2 cache' in line and not cache_sizes["L2"]:
+                        cache_sizes["L2"] = line.split(':')[1].strip()
+                    elif 'L3 cache' in line and not cache_sizes["L3"]:
+                        cache_sizes["L3"] = line.split(':')[1].strip()
+                    # Extract the number of physical cores
+                    elif line.startswith('cpu cores') and not physical_cores:
+                        physical_cores = int(line.split(':')[1].strip())
 
-        return model_name, cache_sizes, physical_cores, virtual_cores
+            return model_name, cache_sizes, physical_cores, virtual_cores
+
+        except Exception as e:
+            self.logger.error(f"Error parsing CPU info: {e}")
+            return None
 
     def read_total_ram(self, meminfo_file):
         # Read the total RAM from the meminfo file
@@ -188,46 +232,52 @@ class CPUManager:
             with open(meminfo_file, 'r') as file:
                 for line in file:
                     if line.startswith('MemTotal'):
-                        total_ram = int(line.split()[1]) // 1024  # Convert from kB to MB
+                        total_ram = int(line.split()[1]) // 1024  # Convert to MB
                         break
         except Exception as e:
             self.logger.error(f"Error reading meminfo file: {e}")
         return total_ram
 
     def apply_cpu_clock_speed_limits(self, widget=None):
-        # Apply the minimum and maximum CPU clock speed limits to each CPU thread individually
+        # Apply the minimum and maximum CPU clock speed limits to each CPU thread
         try:
-            command_list = []
+            command_list = []  # List to store commands
 
             for i in range(cpu_file_search.thread_count):
                 try:
+                    # Retrieve the min and max scales and checkbutton for the current thread
                     min_scale = self.min_scales[i]
                     max_scale = self.max_scales[i]
                     checkbutton = self.cpu_min_max_checkbuttons[i]
                 except KeyError:
                     self.logger.error(f"Scale or checkbutton widget for thread {i} not found.")
-                    continue
+                    continue  # Skip to the next thread
 
                 if checkbutton.get_active():
+                    # If the checkbutton is active, retrieve and validate the min and max speeds
                     try:
                         min_speed = int(min_scale.get_value())
                         max_speed = int(max_scale.get_value())
                     except ValueError:
                         self.logger.error(f"Invalid input: CPU speeds must be a number for thread {i}.")
-                        continue
+                        continue  # Skip to the next thread
 
+                    # Validate the min and max speed values
                     if not (0 <= min_speed <= max_speed <= 6000):
                         self.logger.error(f"Invalid input: Please enter valid CPU speed limits for thread {i}.")
-                        continue
+                        continue  # Skip to the next thread
 
                     self.logger.info(f"Applying clockspeed for thread {i}")
 
+                    # Convert speeds to KHz
                     min_frequency_in_khz = min_speed * 1000
                     max_frequency_in_khz = max_speed * 1000
 
+                    # Get the file paths for setting min and max frequencies
                     max_file = cpu_file_search.cpu_files['scaling_max_files'].get(i)
                     min_file = cpu_file_search.cpu_files['scaling_min_files'].get(i)
                     if max_file and min_file:
+                        # Create the commands to apply the min and max frequencies
                         max_command = f'echo {max_frequency_in_khz} | tee {max_file} > /dev/null'
                         min_command = f'echo {min_frequency_in_khz} | tee {min_file} > /dev/null'
                         command_list.extend([max_command, min_command])
@@ -235,9 +285,11 @@ class CPUManager:
                     self.logger.info(f"Skipping clockspeed for thread {i} as checkbutton is not active")
 
             if command_list:
+                # If there are commands to execute, run them with pkexec
                 full_command = ' && '.join(command_list)
                 success, error_message = privileged_actions.run_pkexec_command(full_command)
                 if success:
+                    # Update labels if the command was successful
                     self.update_min_max_labels()
                 else:
                     if error_message == 'canceled':
@@ -252,7 +304,7 @@ class CPUManager:
 
     def read_cpu_speeds(self):
         # Read the current CPU speeds from the appropriate system files
-        speeds = []
+        speeds = []  # List to store the CPU speeds
         for i in range(cpu_file_search.thread_count):
             speed_file = cpu_file_search.cpu_files['speed_files'].get(i)
             if speed_file and os.path.exists(speed_file):
@@ -277,7 +329,7 @@ class CPUManager:
             average_speed = sum(speed for _, speed in speeds) / len(speeds)
             self.average_clock_entry.set_text(f"{average_speed:.0f} MHz")
         else:
-            self.logger.warning("No valid CPU clock speeds found")
+            self.logger.error("No valid CPU clock speeds found")
 
     def update_clock_speeds(self):
         # Update the clock speeds of all CPU threads
@@ -295,34 +347,41 @@ class CPUManager:
             self.logger.error("Stat file not found.")
             return None
 
+        # Open the stat file and read its lines
         with open(stat_file_path, 'r') as file:
             lines = file.readlines()
 
-        cpu_stats = []
+        cpu_stats = []  # List to store the CPU statistics
         for line in lines:
             if line.startswith('cpu'):
                 fields = line.split()
                 if len(fields) >= 5:
-                    cpu_id = fields[0]
-                    user = int(fields[1])
-                    nice = int(fields[2])
-                    system = int(fields[3])
-                    idle = int(fields[4])
+                    cpu_id = fields[0]  # Extract CPU ID
+                    user = int(fields[1])  # Extract user time
+                    nice = int(fields[2])  # Extract nice time
+                    system = int(fields[3])  # Extract system time
+                    idle = int(fields[4])  # Extract idle time
                     cpu_stats.append((cpu_id, user, nice, system, idle))
 
         return cpu_stats
 
     def calculate_load(self, prev_stat, curr_stat):
         # Calculate the CPU load based on previous and current statistics
-        loads = {}
-        for (cpu_id, prev_user, prev_nice, prev_system, prev_idle), (_, curr_user, curr_nice, curr_system, curr_idle) in zip(prev_stat, curr_stat):
+        loads = {}  # Dictionary to store the load percentages for each CPU
+
+        for (cpu_id, prev_user, prev_nice, prev_system, prev_idle), \
+            (_, curr_user, curr_nice, curr_system, curr_idle) in zip(prev_stat, curr_stat):
+
+            # Calculate the previous and current total times
             prev_total = prev_user + prev_nice + prev_system + prev_idle
             curr_total = curr_user + curr_nice + curr_system + curr_idle
 
+            # Calculate the differences in total and idle times
             total_diff = curr_total - prev_total
             idle_diff = curr_idle - prev_idle
 
             if total_diff != 0:
+                # Calculate the load percentage
                 load_percentage = 100 * (total_diff - idle_diff) / total_diff
                 loads[cpu_id] = load_percentage
 
@@ -330,10 +389,12 @@ class CPUManager:
 
     def update_average_load(self, loads):
         # Calculate and update the average CPU load
-        average_load = sum(loads.values()) / len(loads)
-        load_percentage = min(100, average_load)
+        average_load = sum(loads.values()) / len(loads)  # Calculate the average load
+        load_percentage = min(100, average_load)  # Ensure the load percentage does not exceed 100%
 
+        # Get the model from the average progress bar
         model = self.average_progress_bar.get_model()
+        # Update the model if the load percentage has changed
         if int(model[0][0]) != int(load_percentage):
             model[0][0] = int(load_percentage)
             model[0][1] = f"{int(load_percentage)}%"
@@ -344,7 +405,9 @@ class CPUManager:
             if cpu_id.startswith('cpu') and cpu_id != 'cpu':  # Skip the aggregated 'cpu' line
                 thread_index = int(cpu_id.replace('cpu', ''))
                 if thread_index in self.progress_bars:
+                    # Get the model from the progress bar for the current thread
                     thread_model = self.progress_bars[thread_index].get_model()
+                    # Update the model if the load has changed
                     if int(thread_model[0][0]) != int(load):
                         thread_model[0][0] = int(load)
                         thread_model[0][1] = f"{int(load)}%"
@@ -352,17 +415,17 @@ class CPUManager:
     def update_load(self):
         # Update the CPU load for all threads
         try:
-            curr_stat = self.read_stat_file()
+            curr_stat = self.read_stat_file()  # Read the current CPU statistics
             if not curr_stat:
                 return
 
+            # Calculate the load based on the previous and current statistics
             loads = self.calculate_load(self.prev_stat, curr_stat)
             if loads:
-                self.update_average_load(loads)
-                self.update_thread_loads(loads)
-
+                self.update_average_load(loads)  # Update the average load
+                self.update_thread_loads(loads)  # Update the load for each thread
+            # Update the previous statistics
             self.prev_stat = curr_stat
-
         except Exception as e:
             self.logger.error(f"Error updating average load: {e}")
 
@@ -380,40 +443,58 @@ class CPUManager:
         self.logger.error("No package temperature file found.")
         return None, None
 
-    def update_temperature_entry(self, temp_celsius):
-        # Update the temperature entry in the GUI
-        if temp_celsius is not None:
-            self.package_temp_entry.set_text(f"{int(temp_celsius)} °C")
-
-    def log_temperature(self, temp_str, temp_celsius):
-        # Log the temperature readings initially
-        if not self.initial_log_done:
-            self.logger.info(f"Raw temperature reading: {temp_str}")
-            self.logger.info(f"Package Temperature: {temp_celsius}°C")
-            self.initial_log_done = True
-
     def read_package_temperature(self):
         # Read the CPU package temperature and update the GUI
         try:
             temp_str, temp_celsius = self.read_and_parse_temperature()
             if temp_celsius is not None:
-                self.log_temperature(temp_str, temp_celsius)
-                self.update_temperature_entry(temp_celsius)
+                self.package_temp_entry.set_text(f"{int(temp_celsius)} °C")
                 return temp_celsius
         except Exception as e:
             self.logger.error(f"Error reading package temperature: {e}")
         return None
 
+    def update_thermal_throttle(self):
+        # Update the thermal throttle status in the GUI
+        try:
+            is_throttling = False  # Flag to indicate if throttling is occurring
+
+            for i in range(cpu_file_search.thread_count):
+                package_throttle_time_file = cpu_file_search.cpu_files.get('package_throttle_time_files', {}).get(i)
+
+                if package_throttle_time_file and os.path.exists(package_throttle_time_file):
+                    with open(package_throttle_time_file, 'r') as file:
+                        current_throttle_time = int(file.read().strip())
+
+                    if self.prev_package_throttle_time[i] is not None:
+                        if current_throttle_time > self.prev_package_throttle_time[i]:
+                            is_throttling = True  # Set throttling flag if throttle time has increased
+
+                    self.prev_package_throttle_time[i] = current_throttle_time  # Update previous throttle time
+
+            if is_throttling:
+                # Update the label to indicate throttling
+                self.thermal_throttle_label.set_markup('<span foreground="red">Thermal Throttle</span>')
+                self.thermal_throttle_label.show()
+            else:
+                self.thermal_throttle_label.hide()
+
+        except Exception as e:
+            self.logger.error(f"Error updating thermal throttle widget: {e}")
+
     def set_cpu_governor(self, governor):
         # Set the CPU governor for all CPU threads
         try:
-            command_list = []
+            command_list = []  # List to store commands to set the governor
+
             for i in range(cpu_file_search.thread_count):
                 governor_file = cpu_file_search.cpu_files['governor_files'].get(i)
                 if governor_file:
+                    # Add command to set the governor for the current thread
                     command_list.append(f'echo "{governor}" | sudo tee {governor_file} > /dev/null')
 
             if command_list:
+                # If there are commands to execute, run them with pkexec
                 full_command = ' && '.join(command_list)
                 success, error_message = privileged_actions.run_pkexec_command(full_command)
                 if success:
@@ -476,7 +557,7 @@ class CPUManager:
         model = self.governor_combobox.get_model()
         model.clear()
 
-        # First entry as a placeholder
+        # Add the first entry as a placeholder
         model.append(["Select Governor"])
 
         # Gather all unique governors from available governor files
@@ -495,20 +576,23 @@ class CPUManager:
         for governor in sorted(global_state.unique_governors):
             model.append([governor])
 
-        # Set the active index to 0 which is the "Select Governor" placeholder
+        # Set the active index to 0, which is the "Select Governor" placeholder
         self.governor_combobox.set_active(0)
 
     def toggle_boost(self, widget=None):
         # Toggle the CPU boost clock on or off
         try:
-            current_status = self.read_boost_status()
-            is_enabled = not current_status
+            current_status = self.find_boost_type()  # Get the current boost status
+            is_enabled = not current_status  # Determine the new boost status
 
-            command_list = []
+            command_list = []  # List to store commands to toggle boost
+
             if cpu_file_search.cpu_type == "Intel" and cpu_file_search.intel_boost_path:
+                # For Intel CPUs, set the boost value based on the new status
                 value = '0' if is_enabled else '1'
                 command_list.append(f'echo {value} | sudo tee {cpu_file_search.intel_boost_path} > /dev/null')
             else:
+                # For non-Intel CPUs, toggle the boost for each thread
                 for i in range(cpu_file_search.thread_count):
                     boost_file = cpu_file_search.cpu_files['boost_files'].get(i)
                     if boost_file:
@@ -516,22 +600,29 @@ class CPUManager:
                         command_list.append(f'echo {value} | sudo tee {boost_file} > /dev/null')
 
             if command_list:
+                # If there are commands to execute, run them with pkexec
                 full_command = ' && '.join(command_list)
                 success, error_message = privileged_actions.run_pkexec_command(full_command)
                 if success:
-                    global_state.boost_enabled = is_enabled
+                    global_state.boost_enabled = is_enabled  # Update the global state
+                    self.update_boost_checkbutton()  # Update the checkbutton state
                     self.logger.info("CPU boost toggled successfully.")
                 elif error_message == 'canceled':
                     self.logger.info("User canceled the CPU boost clock toggle operation.")
+                    self.update_boost_checkbutton()  # Reset the checkbutton state to the current status
                 else:
                     self.logger.error("Failed to toggle CPU boost: " + error_message)
-            elif cpu_file_search.cpu_type != "Intel":  # Log only if expected to have boost control
+                    self.update_boost_checkbutton()  # Reset the checkbutton state to the current status
+            elif cpu_file_search.cpu_type != "Intel":
+                # Log only if expected to have boost files
                 self.logger.info("No boost control files found for non-Intel CPUs.")
+
         except Exception as e:
             self.logger.error(f"Error toggling CPU boost: {e}")
+            self.update_boost_checkbutton()  # Reset the checkbutton state to the current status
 
-    def read_boost_status(self):
-        # Read the current boost status from the system file
+    def find_boost_type(self):
+        # Determine which boost files are correct for your CPU type
         if cpu_file_search.cpu_type == "Intel" and cpu_file_search.intel_boost_path and os.path.exists(cpu_file_search.intel_boost_path):
             return self.read_boost_file(cpu_file_search.intel_boost_path, intel=True)
         else:
@@ -559,7 +650,7 @@ class CPUManager:
     def update_boost_checkbutton(self):
         # Update the boost checkbutton status in the GUI
         try:
-            current_status = self.read_boost_status()
+            current_status = self.find_boost_type()
             if current_status is None:
                 self.boost_checkbutton.hide()
             else:
@@ -568,13 +659,8 @@ class CPUManager:
                     self.boost_checkbutton.handler_block_by_func(self.toggle_boost)
                     self.boost_checkbutton.set_active(current_status)
                     self.boost_checkbutton.handler_unblock_by_func(self.toggle_boost)
-                if not self.initial_log_done:
-                    self.logger.info(f"Boost checkbutton status updated to reflect system status: {'enabled' if current_status else 'disabled'}.")
-                    self.initial_log_done = True
-
         except Exception as e:
             self.logger.error(f"Error updating boost checkbutton status: {e}")
-            return None
 
     def set_intel_tdp(self, widget=None):
         # Set the TDP (Thermal Design Power) for Intel CPUs
@@ -588,10 +674,10 @@ class CPUManager:
                 self.logger.error("Intel TDP control file not found.")
                 return False
 
-            tdp_scale = self.tdp_scale
-            tdp_value_watts = tdp_scale.get_value()
+            tdp_value_watts = self.tdp_scale.get_value()
             tdp_value_microwatts = int(tdp_value_watts * 1_000_000)  # Convert watts to microwatts
 
+            # Create the command to set the TDP value
             command = f'echo {tdp_value_microwatts} | sudo tee {tdp_file} > /dev/null'
             success, error_message = privileged_actions.run_pkexec_command(command)
             if success:
@@ -614,11 +700,10 @@ class CPUManager:
                 self.logger.error("TDP control with ryzen_smu is only supported for AMD Ryzen CPUs.")
                 return False
 
-            tdp_scale = self.tdp_scale
-            tdp_value_watts = tdp_scale.get_value()
+            tdp_value_watts = self.tdp_scale.get_value()
             tdp_value_milliwatts = int(tdp_value_watts * 1000)  # Convert watts to milliwatts
 
-            # Prepare the command
+            # Create the command to set the TDP value
             command = f"printf '%0*x' 48 {tdp_value_milliwatts} | fold -w 2 | tac | tr -d '\\n' | xxd -r -p | sudo tee /sys/kernel/ryzen_smu_drv/smu_args && printf '\\x53' | sudo tee /sys/kernel/ryzen_smu_drv/rsmu_cmd"
 
             # Execute the command

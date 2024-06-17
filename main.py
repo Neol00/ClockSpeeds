@@ -47,7 +47,6 @@ class ClockSpeedsApp:
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
         self.icon_path = os.path.join(self.script_dir, "icon", "ClockSpeeds-Icon.png")
         self.pixbuf128 = GdkPixbuf.Pixbuf.new_from_file_at_scale(self.icon_path, 128, 128, True)
-        self.pixbuf64 = GdkPixbuf.Pixbuf.new_from_file_at_scale(self.icon_path, 64, 64, True)
 
         # Call methods on startup
         self.setup_main_box()
@@ -60,7 +59,6 @@ class ClockSpeedsApp:
         self.update_scales()
         self.update_cpu_widgets()
         self.set_window_icon()
-        self.setup_tray_icon()
 
     def setup_main_box(self):
         # Set up the main box layout
@@ -76,8 +74,23 @@ class ClockSpeedsApp:
             self.notebook = widget_factory.create_notebook(self.main_box)
             self.monitor_tab = widget_factory.create_tab(self.notebook, 'Monitor')
             self.control_tab = widget_factory.create_tab(self.notebook, 'Control')
+            
+            # Connect the switch-page signal
+            self.notebook.connect("switch-page", self.on_tab_switch)
         except Exception as e:
             self.logger.error(f"Error creating notebook: {e}")
+
+    def on_tab_switch(self, notebook, page, page_num):
+        # Stop or start the periodic tasks on tab switch
+        if page_num == 0:  # Monitor tab
+            cpu_manager.schedule_monitor_tasks()
+            cpu_manager.stop_control_tasks()
+        elif page_num == 1:  # Control tab
+            cpu_manager.schedule_control_tasks()
+            cpu_manager.stop_monitor_tasks()
+        else:
+            cpu_manager.stop_monitor_tasks()
+            cpu_manager.stop_control_tasks()
 
     def create_more_button(self):
         # Create the "more" button to show additional options
@@ -126,7 +139,7 @@ class ClockSpeedsApp:
         try:
             cpu_info = cpu_manager.get_cpu_info()
             if not cpu_info:
-                self.logger.error("Failed to retrieve CPU info.")
+                self.logger.warning("Failed to retrieve CPU info.")
                 return
 
             system_dialog = Gtk.Dialog(title="System", transient_for=self.window, flags=0)
@@ -287,6 +300,9 @@ class ClockSpeedsApp:
 
             self.package_temp_entry = widget_factory.create_entry(self.monitor_fixed, "N/A °C", False, width_chars=10, x=400, y=y_offset)
 
+            self.thermal_throttle_label = widget_factory.create_label(self.monitor_fixed, "Thermal Throttle", x=390, y=y_offset + 32)
+            self.thermal_throttle_label.hide()
+
             self.current_governor_label = widget_factory.create_label(self.monitor_fixed, "", x=170, y=y_offset + 50)
 
             self.logger.info("Monitor widgets created.")
@@ -377,6 +393,7 @@ class ClockSpeedsApp:
             gui_components['average_progress_bar'] = self.average_progress_bar
             gui_components['package_temp_entry'] = self.package_temp_entry
             gui_components['current_governor_label'] = self.current_governor_label
+            gui_components['thermal_throttle_label'] = self.thermal_throttle_label
             gui_components['cpu_min_max_checkbuttons'] = self.cpu_min_max_checkbuttons
             gui_components['cpu_min_scales'] = self.cpu_min_scales
             gui_components['cpu_max_scales'] = self.cpu_max_scales
@@ -417,61 +434,9 @@ class ClockSpeedsApp:
     def set_window_icon(self):
         # Set the window icon
         try:
-            self.window.set_icon(self.pixbuf64)
+            self.window.set_icon(self.pixbuf128)
         except Exception as e:
             self.logger.error(f"Error setting window icon: {e}")
-
-    def setup_tray_icon(self):
-        # Set up the system tray icon
-        temp_icon_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-        self.pixbuf64.savev(temp_icon_file.name, "png", [], [])
-        icon_path = temp_icon_file.name
-
-        self.indicator = AppIndicator3.Indicator.new(
-            "ClockSpeedsAppIndicator",
-            icon_path,
-            AppIndicator3.IndicatorCategory.SYSTEM_SERVICES
-        )
-        self.indicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
-        self.indicator.set_menu(self.create_tray_menu())
-
-        # Set the title and tooltip
-        self.indicator.set_title("ClockSpeeds")
-
-    def create_tray_menu(self):
-        # Create the tray menu with open, hide, and quit options
-        menu = Gtk.Menu()
-
-        # Open main window item
-        item_open = Gtk.MenuItem(label='Open ClockSpeeds')
-        item_open.connect('activate', self.show_main_window)
-        menu.append(item_open)
-
-        # Hide main window item
-        item_hide = Gtk.MenuItem(label='Hide')
-        item_hide.connect('activate', self.hide_main_window)
-        menu.append(item_hide)
-
-        # Quit item
-        item_quit = Gtk.MenuItem(label='Quit')
-        item_quit.connect('activate', Gtk.main_quit)
-        menu.append(item_quit)
-
-        menu.show_all()
-        return menu
-
-    def show_main_window(self, widget):
-        # Show the main application window
-        self.window.set_skip_taskbar_hint(False)
-        self.window.show_all()
-        self.window.present()
-        cpu_manager.schedule_periodic_tasks()
-
-    def hide_main_window(self, widget):
-        # Hide the main application window
-        self.window.set_skip_taskbar_hint(True)
-        self.window.hide()
-        cpu_manager.stop_periodic_tasks()
 
 def main():
     # Main function to start the application

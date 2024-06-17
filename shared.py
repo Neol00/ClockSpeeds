@@ -69,9 +69,9 @@ class GlobalState:
             if not config_manager.get_setting('Settings', 'LoggingLevel'):
                 config_manager.set_setting('Settings', 'LoggingLevel', 'WARNING')
 
-            self.logger.info("Settings saved successfully.")
+            self.logger.info("Default settings saved successfully.")
         except Exception as e:
-            self.logger.error(f"Error saving settings: {e}")
+            self.logger.error(f"Error saving default settings: {e}")
 
 # Create an instance of GlobalState to manage global settings
 global_state = GlobalState()

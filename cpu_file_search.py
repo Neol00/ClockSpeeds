@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 # ClockSpeeds - CPU Monitoring and Control Application for Linux
-# Copyright (c) 2024 Noel Ejemyr
+# Copyright (c) 2024 Noel Ejemyr <noelejemyr@protonmail.com>
 #
 # ClockSpeeds is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by

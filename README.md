@@ -25,8 +25,6 @@ This project is in early development so some things might not work as expected.
 
 ## Getting Started
 
-The application is made primarly for Arch Linux but will work just fine with other distibutions as well. 
-
 Simply clone the repository with,
 
 ```sh

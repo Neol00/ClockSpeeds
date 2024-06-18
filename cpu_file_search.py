@@ -44,7 +44,7 @@ class CPUFileSearch:
             'cpuinfo_min_files': "cpuinfo_min_freq",
             'available_governors_files': "scaling_available_governors",
             'boost_files': "boost",
-            'package_throttle_time_files': "package_throttle_total_time_ms",
+            'package_throttle_time_files': "package_throttle_total_time_ms"
         }
 
         # Path to the Intel boost file

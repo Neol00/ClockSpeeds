@@ -145,7 +145,7 @@ class CssManager:
         # Save the selected CSS theme to the configuration file
         try:
             if self.is_valid_css(css_name):
-                config_manager.set_setting('CSS', 'selectedcss', css_name)
+                config_manager.set_setting('CSS', 'selected_css', css_name)
             if not self.is_valid_css(css_name):
                 self.logger.info(f"Attempted to save invalid CSS theme: {css_name}")
         except Exception as e:
@@ -154,7 +154,7 @@ class CssManager:
     def load_css_config(self):
         # Load the selected CSS theme from the configuration file
         try:
-            css_name = config_manager.get_setting('CSS', 'selectedcss', default=None)
+            css_name = config_manager.get_setting('CSS', 'selected_css', default=None)
             if not self.is_valid_css(css_name):
                 self.logger.info(f"Attempted to load invalid CSS theme: {css_name}")
             return css_name

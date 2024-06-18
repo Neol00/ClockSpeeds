@@ -44,6 +44,7 @@ class CPUManager:
 
         # Keep track if CPU is currently throttling
         self.prev_package_throttle_time = [None] * cpu_file_search.thread_count
+        self.is_throttling = False  # Flag to indicate if throttling is occurring
 
         # Initialize dictionaries for GUI components
         self.clock_labels = {}
@@ -65,7 +66,7 @@ class CPUManager:
         self.control_task_id = None
 
         # Load update interval from config or use default
-        self.update_interval = float(config_manager.get_setting("Settings", "updateinterval", "1.0"))
+        self.update_interval = float(config_manager.get_setting("Settings", "update_interval", "1.0"))
 
         # Read initial CPU statistics
         self.prev_stat = self.read_stat_file()
@@ -104,7 +105,7 @@ class CPUManager:
             self.update_load()
             self.read_package_temperature()
             self.get_current_governor()
-            self.update_thermal_throttle()
+            self.update_throttle()
         except Exception as e:
             self.logger.error("Failed to run monitor tasks: %s", e)
         # Only reschedule if the task ID is still valid (i.e., periodic tasks haven't been stopped)
@@ -126,7 +127,7 @@ class CPUManager:
         # Set the update interval for periodic tasks and save it in the config
         self.update_interval = round(max(0.1, min(20.0, interval)), 1)
         self.logger.info(f"Update interval set to {self.update_interval} seconds")
-        config_manager.set_setting("Settings", "updateinterval", f"{self.update_interval:.1f}")
+        config_manager.set_setting("Settings", "update_interval", f"{self.update_interval:.1f}")
         self.schedule_monitor_tasks()
         self.schedule_control_tasks()
 
@@ -454,33 +455,33 @@ class CPUManager:
             self.logger.error(f"Error reading package temperature: {e}")
         return None
 
-    def update_thermal_throttle(self):
+    def update_throttle(self):
         # Update the thermal throttle status in the GUI
         try:
-            is_throttling = False  # Flag to indicate if throttling is occurring
+            if cpu_file_search.cpu_type == "Intel":
+                # Intel specific throttle file check
+                for i in range(cpu_file_search.thread_count):
+                    package_throttle_time_file = cpu_file_search.cpu_files.get('package_throttle_time_files', {}).get(i)
 
-            for i in range(cpu_file_search.thread_count):
-                package_throttle_time_file = cpu_file_search.cpu_files.get('package_throttle_time_files', {}).get(i)
+                    if package_throttle_time_file and os.path.exists(package_throttle_time_file):
+                        with open(package_throttle_time_file, 'r') as file:
+                            current_throttle_time = int(file.read().strip())
 
-                if package_throttle_time_file and os.path.exists(package_throttle_time_file):
-                    with open(package_throttle_time_file, 'r') as file:
-                        current_throttle_time = int(file.read().strip())
+                        if self.prev_package_throttle_time[i] is not None:
+                            if current_throttle_time > self.prev_package_throttle_time[i]:
+                                self.is_throttling = True  # Set throttling flag if throttle time has increased
 
-                    if self.prev_package_throttle_time[i] is not None:
-                        if current_throttle_time > self.prev_package_throttle_time[i]:
-                            is_throttling = True  # Set throttling flag if throttle time has increased
+                        self.prev_package_throttle_time[i] = current_throttle_time  # Update previous throttle time
 
-                    self.prev_package_throttle_time[i] = current_throttle_time  # Update previous throttle time
-
-            if is_throttling:
+            if self.is_throttling:
                 # Update the label to indicate throttling
-                self.thermal_throttle_label.set_markup('<span foreground="red">Thermal Throttle</span>')
+                self.thermal_throttle_label.set_markup('<span foreground="red">Throttling</span>')
                 self.thermal_throttle_label.show()
             else:
                 self.thermal_throttle_label.hide()
 
         except Exception as e:
-            self.logger.error(f"Error updating thermal throttle widget: {e}")
+            self.logger.error(f"Error updating throttle widget: {e}")
 
     def set_cpu_governor(self, governor):
         # Set the CPU governor for all CPU threads
@@ -747,6 +748,13 @@ class CPUManager:
             return None, None
 
     def get_allowed_tdp_values(self):
+        # First, check the CPU type
+        cpu_type = cpu_file_search.cpu_type
+
+        # If CPU type is "Other", do not proceed with TDP check and log no error
+        if cpu_type == "Other":
+            return None
+
         # Get the allowed TDP values for Intel CPUs
         max_tdp_file = cpu_file_search.intel_tdp_files['max_tdp']
         if not max_tdp_file or not os.path.exists(max_tdp_file):

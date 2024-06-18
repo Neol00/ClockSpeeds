@@ -300,7 +300,7 @@ class ClockSpeedsApp:
 
             self.package_temp_entry = widget_factory.create_entry(self.monitor_fixed, "N/A °C", False, width_chars=10, x=400, y=y_offset)
 
-            self.thermal_throttle_label = widget_factory.create_label(self.monitor_fixed, "Thermal Throttle", x=390, y=y_offset + 32)
+            self.thermal_throttle_label = widget_factory.create_label(self.monitor_fixed, "Throttling", x=410, y=y_offset + 32)
             self.thermal_throttle_label.hide()
 
             self.current_governor_label = widget_factory.create_label(self.monitor_fixed, "", x=170, y=y_offset + 50)

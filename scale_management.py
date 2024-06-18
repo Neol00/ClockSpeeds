@@ -20,6 +20,7 @@ import logging
 from log_setup import get_logger
 from config_setup import config_manager
 from shared import global_state, gui_components
+from cpu_file_search import cpu_file_search
 from cpu_management import cpu_manager
 
 class ScaleManager:
@@ -44,7 +45,7 @@ class ScaleManager:
             self.tdp_scale = gui_components['tdp_scale']
 
             # Loop through the min scales in the GUI components and set up references
-            for thread_num in gui_components['cpu_min_scales'].keys():
+            for thread_num in range(cpu_file_search.thread_count):
                 try:
                     self.min_scales[thread_num] = gui_components['cpu_min_scales'][thread_num]
                     self.max_scales[thread_num] = gui_components['cpu_max_scales'][thread_num]
@@ -133,21 +134,23 @@ class ScaleManager:
             if not min_allowed_freqs or not max_allowed_freqs:
                 self.logger.error("Failed to retrieve allowed CPU frequencies")
                 return
-            
+
             # Check if the thread number is valid
             if thread_num is not None and thread_num >= len(min_allowed_freqs):
                 self.logger.error(f"Allowed frequencies for thread {thread_num} not found")
                 return
-            
+
             # Set the range for min and max scales if they are provided
             if min_scale and max_scale:
                 min_scale.set_range(min_allowed_freqs[thread_num], max_allowed_freqs[thread_num])
                 max_scale.set_range(min_allowed_freqs[thread_num], max_allowed_freqs[thread_num])
-            
-            # Set the range for the TDP scale if it is provided
-            if self.tdp_scale:
+
+            # Set the range for the TDP scale only if the CPU type is not "Other"
+            if self.tdp_scale and cpu_file_search.cpu_type != "Other":
                 max_tdp_value_w = cpu_manager.get_allowed_tdp_values()
-                self.tdp_scale.set_range(global_state.TDP_SCALE_MIN, max_tdp_value_w)
+                if max_tdp_value_w is not None:
+                    self.tdp_scale.set_range(global_state.TDP_SCALE_MIN, max_tdp_value_w)
+
         except Exception as e:
             self.logger.error(f"Error setting limited range: {e}")
 
@@ -203,7 +206,7 @@ class ScaleManager:
                 self.set_scale_range(tdp_scale=self.tdp_scale)
             
             # Save the new setting to the configuration
-            config_manager.set_setting('Settings', 'DisableScaleLimits', str(global_state.disable_scale_limits))
+            config_manager.set_setting('Settings', 'disable_scale_limits', str(global_state.disable_scale_limits))
         except Exception as e:
             self.logger.error(f"Error changing scale limits: {e}")
 
@@ -211,15 +214,15 @@ class ScaleManager:
         # Handle changes to the sync scales setting
         try:
             global_state.sync_scales = self.sync_scales_checkbutton.get_active()
-            config_manager.set_setting('Settings', 'SyncScales', str(global_state.sync_scales))
+            config_manager.set_setting('Settings', 'sync_scales', str(global_state.sync_scales))
         except Exception as e:
             self.logger.error(f"Error changing sync scales setting: {e}")
 
     def load_scale_config_settings(self):
         # Load the scale configuration settings from the config manager
         try:
-            scale_limit_setting = config_manager.get_setting('Settings', 'DisableScaleLimits', 'False')
-            sync_scales_setting = config_manager.get_setting('Settings', 'SyncScales', 'False')
+            scale_limit_setting = config_manager.get_setting('Settings', 'disable_scale_limits', 'False')
+            sync_scales_setting = config_manager.get_setting('Settings', 'sync_scales', 'False')
             global_state.disable_scale_limits = scale_limit_setting == 'True'
             global_state.sync_scales = sync_scales_setting == 'True'
             self.disable_scale_limits_checkbutton.set_active(global_state.disable_scale_limits)

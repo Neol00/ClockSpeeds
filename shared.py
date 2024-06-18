@@ -29,12 +29,12 @@ class GlobalState:
         self.SPACING = 5
         
         # Minimum and maximum scale values for CPU frequency adjustment
-        self.SCALE_MIN = int(config_manager.get_setting('Settings', 'SCALE_MIN', 1))
-        self.SCALE_MAX = int(config_manager.get_setting('Settings', 'SCALE_MAX', 6000))
+        self.SCALE_MIN = int(config_manager.get_setting('Settings', 'clock_scale_minimum', 1))
+        self.SCALE_MAX = int(config_manager.get_setting('Settings', 'clock_scale_maximum', 6000))
         
         # Minimum and maximum scale values for TDP adjustment
-        self.TDP_SCALE_MIN = int(config_manager.get_setting('Settings', 'TDP_SCALE_MIN', 1))
-        self.TDP_SCALE_MAX = int(config_manager.get_setting('Settings', 'TDP_SCALE_MAX', 400))
+        self.TDP_SCALE_MIN = int(config_manager.get_setting('Settings', 'tdp_scale_minimum', 1))
+        self.TDP_SCALE_MAX = int(config_manager.get_setting('Settings', 'tdp_scale_maximum', 400))
         
         # Vertical offset for widget placement
         self.y_offset = 0
@@ -58,16 +58,16 @@ class GlobalState:
     def save_settings(self):
         # Save the current settings to the configuration file
         try:
-            if not config_manager.get_setting('Settings', 'SCALE_MIN'):
-                config_manager.set_setting('Settings', 'SCALE_MIN', str(self.SCALE_MIN))
-            if not config_manager.get_setting('Settings', 'SCALE_MAX'):
-                config_manager.set_setting('Settings', 'SCALE_MAX', str(self.SCALE_MAX))
-            if not config_manager.get_setting('Settings', 'TDP_SCALE_MIN'):
-                config_manager.set_setting('Settings', 'TDP_SCALE_MIN', str(self.TDP_SCALE_MIN))
-            if not config_manager.get_setting('Settings', 'TDP_SCALE_MAX'):
-                config_manager.set_setting('Settings', 'TDP_SCALE_MAX', str(self.TDP_SCALE_MAX))
-            if not config_manager.get_setting('Settings', 'LoggingLevel'):
-                config_manager.set_setting('Settings', 'LoggingLevel', 'WARNING')
+            if not config_manager.get_setting('Settings', 'clock_scale_minimum'):
+                config_manager.set_setting('Settings', 'clock_scale_minimum', str(self.SCALE_MIN))
+            if not config_manager.get_setting('Settings', 'clock_scale_maximum'):
+                config_manager.set_setting('Settings', 'clock_scale_maximum', str(self.SCALE_MAX))
+            if not config_manager.get_setting('Settings', 'tdp_scale_minimum'):
+                config_manager.set_setting('Settings', 'tdp_scale_minimum', str(self.TDP_SCALE_MIN))
+            if not config_manager.get_setting('Settings', 'tdp_scale_maximum'):
+                config_manager.set_setting('Settings', 'tdp_scale_maximum', str(self.TDP_SCALE_MAX))
+            if not config_manager.get_setting('Settings', 'logging_level'):
+                config_manager.set_setting('Settings', 'logging_level', 'WARNING')
 
             self.logger.info("Default settings saved successfully.")
         except Exception as e:

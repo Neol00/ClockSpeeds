@@ -32,19 +32,17 @@ class CPUManager:
         # Initialize the logger
         self.logger = get_logger()
 
-        # Set of valid CPU governors
-        self.valid_governors = frozenset([
-            'conservative', 
-            'ondemand', 
-            'performance', 
-            'powersave', 
-            'schedutil',
-            'userspace'
-        ])
+        self.monitor_task_id = None
+        self.control_task_id = None
 
-        # Keep track if CPU is currently throttling
-        self.prev_package_throttle_time = [None] * cpu_file_search.thread_count
-        self.is_throttling = False  # Flag to indicate if throttling is occurring
+        # Load update interval from config or use default
+        self.update_interval = float(config_manager.get_setting("Settings", "update_interval", "1.0"))
+
+        # Read initial CPU statistics
+        self.prev_stat = self.read_stat_file()
+
+        # Schedule monitor tasks on startup
+        self.schedule_monitor_tasks()
 
         # Initialize dictionaries for GUI components
         self.clock_labels = {}
@@ -62,17 +60,19 @@ class CPUManager:
         self.boost_checkbutton = None
         self.tdp_scale = None
 
-        self.monitor_task_id = None
-        self.control_task_id = None
+        # Set of valid CPU governors
+        self.valid_governors = frozenset([
+            'conservative', 
+            'ondemand', 
+            'performance', 
+            'powersave', 
+            'schedutil',
+            'userspace'
+        ])
 
-        # Load update interval from config or use default
-        self.update_interval = float(config_manager.get_setting("Settings", "update_interval", "1.0"))
-
-        # Read initial CPU statistics
-        self.prev_stat = self.read_stat_file()
-
-        # Call method on startup
-        self.schedule_monitor_tasks()
+        # Keep track if CPU is currently throttling
+        self.prev_package_throttle_time = [None] * cpu_file_search.thread_count
+        self.is_throttling = False  # Flag to indicate if throttling is occurring
 
     def schedule_monitor_tasks(self):
         # Schedule the periodic tasks for the monitor tab with the specified update interval

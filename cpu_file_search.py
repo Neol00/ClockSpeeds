@@ -17,13 +17,90 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import os
+import json
 import logging
 from log_setup import get_logger
+
+class DirectoryCache:
+    def __init__(self):
+        # Initialize the logger
+        self.logger = get_logger()
+
+        self.cache = {}
+
+        self.cache_file_path = os.path.join(os.path.expanduser("~"), ".cache", "ClockSpeeds", "directory_cache.json")
+
+    def save_directories_to_file(self, directories):
+        try:
+            with open(self.cache_file_path, 'w') as cache_file:
+                json.dump(directories, cache_file)
+                self.logger.info("Discovered directories and file paths saved to file.")
+        except Exception as e:
+            self.logger.error(f"Failed to save directories and file paths: {e}")
+
+    def load_directories_from_file(self):
+        try:
+            if os.path.exists(self.cache_file_path):
+                with open(self.cache_file_path, 'r') as cache_file:
+                    directories = json.load(cache_file)
+                    self.logger.info("Discovered directories and file paths loaded from file.")
+                    return directories
+        except Exception as e:
+            self.logger.error(f"Failed to load directories and file paths: {e}")
+        return None
+
+    def add(self, path, subdirs, files):
+        self.cache[path] = {'subdirs': subdirs, 'files': files}
+        self.dirty = True  # Mark the cache as modified
+
+    def get(self, path):
+        return self.cache.get(path)
+
+    def clear(self):
+        self.cache = {}
+
+    def cached_directory_walk(self, base_path):
+        # Generator function that walks through directories using caching
+        stack = [base_path]
+        seen_paths = set()  # To track paths and avoid loops
+
+        while stack:
+            path = stack.pop()
+            if path in seen_paths:
+                continue
+            seen_paths.add(path)
+
+            cached = self.get(path)
+            if cached:
+                yield path, cached['subdirs'], cached['files']
+                continue
+
+            try:
+                subdirs, files = [], []
+                with os.scandir(path) as scanner:
+                    for entry in scanner:
+                        if entry.is_dir(follow_symlinks=False):
+                            full_path = entry.path
+                            if os.path.realpath(full_path) not in seen_paths:
+                                subdirs.append(entry.name)
+                                stack.append(full_path)
+                        else:
+                            files.append(entry.name)
+                self.add(path, subdirs, files)
+                yield path, subdirs, files
+            except PermissionError:
+                # Silently ignore directories that cannot be accessed due to permission errors
+                continue
+            except OSError as e:
+                self.logger.error(f"Access error on {path}: {e}")
 
 class CPUFileSearch:
     def __init__(self):
         # Initialize the logger
         self.logger = get_logger()
+
+        # Create an instance of DirectoryCache
+        self.directory_cache = DirectoryCache()
 
         # Get the total number of CPU threads
         self.thread_count = os.cpu_count()
@@ -35,7 +112,7 @@ class CPUFileSearch:
         self.cpu_directory = None
 
         # File paths for various CPU files
-        self.file_paths = {
+        self.cpufreq_file_paths = {
             'governor_files': "scaling_governor",
             'speed_files': "scaling_cur_freq",
             'scaling_max_files': "scaling_max_freq",
@@ -43,9 +120,15 @@ class CPUFileSearch:
             'cpuinfo_max_files': "cpuinfo_max_freq",
             'cpuinfo_min_files': "cpuinfo_min_freq",
             'available_governors_files': "scaling_available_governors",
-            'boost_files': "boost",
-            'package_throttle_time_files': "package_throttle_total_time_ms"
+            'boost_files': "boost"
         }
+
+        # Path for package throttle time files
+        self.package_throttle_time_file = "package_throttle_total_time_ms"
+
+        # Dictionary to hold found CPU files
+        self.cpu_files = {key: {} for key in self.cpufreq_file_paths.keys()}
+        self.cpu_files['package_throttle_time_files'] = {}
 
         # Path to the Intel boost file
         self.intel_boost_path = None
@@ -59,27 +142,76 @@ class CPUFileSearch:
         # Dictionary to hold paths to Intel TDP files
         self.intel_tdp_files = {'tdp': None, 'max_tdp': None}
 
-        # Dictionary to hold found CPU files
-        self.cpu_files = {key: {} for key in self.file_paths.keys()}
+        # Load paths from cache
+        cached_directories = self.directory_cache.load_directories_from_file()
+        if cached_directories:
+            self.load_paths_from_cache(cached_directories)
+        else:
+            self.initialize_cpu_files()
 
-        # Initialize the search for CPU files
-        self.initialize_cpu_files()
+    def load_paths_from_cache(self, cached_directories):
+        self.cpu_directory = cached_directories["cpu_directory"]
+        self.intel_boost_path = cached_directories["intel_boost_path"]
+        self.package_temp_file = cached_directories["package_temp_file"]
+        self.proc_files = cached_directories["proc_files"]
+        self.intel_tdp_files = cached_directories["intel_tdp_files"]
+        self.cpu_files = {key: {int(k): v for k, v in value.items()} for key, value in cached_directories["cpu_files"].items()}
+        self.cpu_type = "Intel" if self.intel_boost_path else "Other"
+        self.logger.info('Using cached CPU directory and files.')
+
+        # Validate the loaded paths
+        self.validate_loaded_paths()
+
+    def validate_loaded_paths(self):
+        errors = []
+
+        if not self.cpu_directory:
+            errors.append("CPU directory is not set.")
+        if not any(self.cpu_files['scaling_max_files'].values()):
+            errors.append("Min or max frequency files are not set for any thread.")
+        if not self.proc_files['stat']:
+            errors.append("/proc/stat file is not set.")
+        if not self.package_temp_file:
+            errors.append("Package temperature file is not set.")
+        
+        if errors:
+            for error in errors:
+                self.logger.error(error)
+            raise RuntimeError("Failed to load necessary CPU paths and files.")
 
     def initialize_cpu_files(self):
-        # Find the CPU directory first
-        self.cpu_directory = self.find_cpu_directory()
+        try:
+            # Find the CPU directory first
+            self.cpu_directory = self.find_cpu_directory()
+            if self.cpu_directory is None:
+                self.logger.warning('CPU directory is not set.')
+                return
 
-        # Initialize the search for all necessary CPU files
-        for i in range(self.thread_count):
-            self.find_cpu_files(i)
-        self.find_proc_files()
-        self.find_thermal_file()
-        self.find_intel_tdp_files()
+            # Initialize the search for all necessary CPU files
+            for i in range(self.thread_count):
+                self.find_cpufreq_files(i)
+                self.find_thermal_throttle_files(i)
+            self.find_no_turbo_file()
+            self.find_proc_files()
+            self.find_thermal_file()
+            self.find_intel_tdp_files()
+
+            # Save the paths to the cache
+            directories_to_save = {
+                "cpu_directory": self.cpu_directory,
+                "cpu_files": self.cpu_files,
+                "intel_boost_path": self.intel_boost_path,
+                "package_temp_file": self.package_temp_file,
+                "proc_files": self.proc_files,
+                "intel_tdp_files": self.intel_tdp_files
+            }
+            self.directory_cache.save_directories_to_file(directories_to_save)
+        except Exception as e:
+            self.logger.error(f"Error initializing CPU files: {e}")
 
     def find_cpu_directory(self, base_path='/sys/'):
-        # Find the directory that contains CPU-related files
         try:
-            for root, dirs, files in os.walk(base_path):
+            for root, dirs, files in self.directory_cache.cached_directory_walk(base_path):
                 if 'intel_pstate' in dirs and 'cpu' in root:
                     self.cpu_type = "Intel"
                     self.logger.info(f"Intel CPU directory found at {root}")
@@ -93,116 +225,131 @@ class CPUFileSearch:
         self.logger.warning('CPU directory not found.')
         return None
 
-    def find_cpu_files(self, thread_index):
-        # Find CPU-related files for a specific thread
+    def find_no_turbo_file(self):
         try:
-            if self.cpu_directory is None:
-                self.logger.warning('CPU directory is not set.')
-                return
-            
-            # If the CPU type is Intel, check for the no_turbo file
-            if self.cpu_type == "Intel":
-                if self.intel_boost_path is None:
-                    potential_path = os.path.join(self.cpu_directory, 'intel_pstate', 'no_turbo')
-                    if os.path.exists(potential_path):
+            # Check if the CPU type is Intel and no_turbo path has not been set yet
+            if self.cpu_type == "Intel" and self.intel_boost_path is None:
+                intel_pstate_path = os.path.join(self.cpu_directory, 'intel_pstate')
+                # Iterate over the cached directory walk
+                for root, dirs, files in self.directory_cache.cached_directory_walk(intel_pstate_path):
+                    if 'no_turbo' in files:
+                        potential_path = os.path.join(root, 'no_turbo')
                         self.intel_boost_path = potential_path
                         self.cpu_files['boost_files'][0] = self.intel_boost_path
                         self.logger.info(f'Intel no_turbo file found at {potential_path}.')
-                    else:
-                        self.logger.warning('Intel no_turbo file does not exist.')
+                        return  # Exit once the file is found
+                # If the loop completes without finding the file
+                self.logger.warning('Intel no_turbo file does not exist.')
+        except Exception as e:
+            self.logger.error(f"Error finding no_turbo file: {e}")
 
-            # Construct the paths for the thread's cpufreq and thermal_throttle directories
+    def find_cpufreq_files(self, thread_index):
+        try:
+            # Construct the path for the thread's cpufreq directory
             thread_cpufreq_directory = os.path.join(self.cpu_directory, f"cpu{thread_index}", "cpufreq")
-            thread_thermal_throttle_directory = os.path.join(self.cpu_directory, f"cpu{thread_index}", "thermal_throttle")
 
-            # Iterate over the file paths defined in self.file_paths
-            for file_key, file_name in self.file_paths.items():
-                if 'throttle' not in file_key:
-                    # Construct the path for non-throttle files
-                    file_path = os.path.join(thread_cpufreq_directory, file_name)
-                    if os.path.exists(file_path):
+            # Use the cached directory walk to check for files within the cpufreq directory
+            found_files = 0
+            for root, dirs, files in self.directory_cache.cached_directory_walk(thread_cpufreq_directory):
+                for file_key, file_name in self.cpufreq_file_paths.items():
+                    if file_name in files:
+                        file_path = os.path.join(root, file_name)
                         self.cpu_files[file_key][thread_index] = file_path
                         self.logger.info(f'File {file_name} for thread {thread_index} found at {file_path}.')
-                    else:
+                        found_files += 1
+                
+                # If all files are found, break out of the loop early
+                if found_files == len(self.cpufreq_file_paths):
+                    return
+
+            if found_files < len(self.cpufreq_file_paths):
+                for file_key, file_name in self.cpufreq_file_paths.items():
+                    if not self.cpu_files[file_key].get(thread_index):
                         if not (self.cpu_type == "Intel" and file_name == "boost"):
                             self.logger.warning(f'File {file_name} for thread {thread_index} does not exist at {file_path}.')
-                elif 'throttle' in file_key:
-                    # Only search for throttle files if the CPU type is Intel
-                    if self.cpu_type == "Intel":
-                        throttle_file_path = os.path.join(thread_thermal_throttle_directory, file_name)
-                        if os.path.exists(throttle_file_path):
-                            self.cpu_files[file_key][thread_index] = throttle_file_path
-                            self.logger.info(f'Throttle file {file_name} for thread {thread_index} found at {throttle_file_path}.')
-                        else:
-                            self.logger.warning(f'Throttle file {os.path.basename(throttle_file_path)} for thread {thread_index} does not exist at {throttle_file_path}.')
-        except Exception as e:
-            self.logger.error(f"Error searching for CPU files for thread {thread_index}: {e}")
 
-    def search_for_no_turbo(self, cpu_files_directory):
-        # Search for the no_turbo file for Intel CPUs
-        if self.intel_boost_path is None:
-            potential_path = os.path.join(cpu_files_directory, 'intel_pstate', 'no_turbo')
-            if os.path.exists(potential_path):
-                self.intel_boost_path = potential_path
-                self.cpu_files['boost_files'][0] = self.intel_boost_path
-            else:
-                self.logger.warning('Intel no_turbo file does not exist.')
+        except Exception as e:
+            self.logger.error(f"Error finding cpufreq files for thread {thread_index}: {e}")
+
+    def find_thermal_throttle_files(self, thread_index):
+        try:
+            if self.cpu_type == "Intel":
+                # Define the directory path for throttling information
+                thread_thermal_throttle_directory = os.path.join(self.cpu_directory, f"cpu{thread_index}", "thermal_throttle")
+                
+                # Use the cached directory walk to check for files within the thermal_throttle directory
+                file_found = False
+                for root, dirs, files in self.directory_cache.cached_directory_walk(thread_thermal_throttle_directory):
+                    if self.package_throttle_time_file in files:
+                        throttle_file_path = os.path.join(root, self.package_throttle_time_file)
+                        self.cpu_files['package_throttle_time_files'][thread_index] = throttle_file_path
+                        self.logger.info(f'Throttle file {self.package_throttle_time_file} for thread {thread_index} found at {throttle_file_path}.')
+                        file_found = True
+                        break
+                
+                if not file_found:
+                    self.logger.warning(f'Throttle file {self.package_throttle_time_file} for thread {thread_index} does not exist at {thread_thermal_throttle_directory}.')
+                    
+        except Exception as e:
+            self.logger.error(f"Error finding thermal throttle files for thread {thread_index}: {e}")
 
     def find_proc_files(self, base_path='/proc/'):
-        # Find necessary /proc files
         proc_file_names = ['stat', 'cpuinfo', 'meminfo']
-        
+        need_to_find = set(proc_file_names)
+
         try:
-            for root, dirs, files in os.walk(base_path):
-                for file_name in proc_file_names:
+            # Use the cached directory walk to check for files within the /proc directory
+            found_files = 0
+            for root, dirs, files in self.directory_cache.cached_directory_walk(base_path):
+                for file_name in list(need_to_find):
                     if file_name in files:
                         self.proc_files[file_name] = os.path.join(root, file_name)
                         self.logger.info(f'Found {file_name} file: {self.proc_files[file_name]}')
-                if all(self.proc_files.values()):
-                    break
+                        need_to_find.remove(file_name)
+                        found_files += 1
+
+                # If all files are found, break out of the loop early
+                if found_files == len(proc_file_names):
+                    return
+
+            if found_files < len(proc_file_names):
+                for file_name in need_to_find:
+                    self.logger.warning(f'{file_name} file not found in /proc/')
+
         except Exception as e:
             self.logger.error(f"Error searching for proc files: {e}")
 
-        for key, path in self.proc_files.items():
-            if not path:
-                self.logger.warning(f'{key} file not found in /proc/')
-
     def find_thermal_file(self):
-        # Find the thermal file for temperature monitoring
         potential_paths = ['/sys/class/', '/sys/devices/']
         try:
-            for path in potential_paths:
-                for root, dirs, files in os.walk(path):
+            for base_path in potential_paths:
+                # Use the cached directory walk to check for files within the potential paths
+                for root, dirs, files in self.directory_cache.cached_directory_walk(base_path):
                     for file in files:
                         if file.startswith('temp') and file.endswith('_input'):
+                            full_path = os.path.join(root, file)
                             label_path = file.replace('_input', '_label')
                             full_label_path = os.path.join(root, label_path)
                             if os.path.exists(full_label_path):
                                 with open(full_label_path, 'r') as label_file:
                                     label = label_file.read().strip().lower()
-                                    if (self.cpu_type == 'Intel' and ('package' in label or 'cpu' in label)) or \
-                                       (self.cpu_type != 'Intel' and 'tctl' in label):
-                                        full_path = os.path.join(root, file)
+                                    if self.is_relevant_temp_file(label):
                                         self.package_temp_file = full_path
-                                        self.logger.info(f'Found Tctl thermal file: {full_path}')
+                                        self.logger.info(f'Found thermal file: {full_path}')
                                         return
                             else:
-                                # Try to find k10temp sensor specifically for AMD
-                                if self.cpu_type != 'Intel' and 'k10temp' in root:
-                                    full_path = os.path.join(root, file)
-                                    self.package_temp_file = full_path
-                                    self.logger.info(f'Found k10temp thermal file without label: {full_path}')
-                                    return
+                                self.logger.info(f'Label file for {file} not found at {full_label_path}')
         except IOError as e:
             self.logger.error(f"IOError while finding other thermal files: {e}")
         except Exception as e:
             self.logger.error(f"Error finding other thermal files: {e}")
+        self.logger.warning('No thermal files found for CPU temperature monitoring.')
 
-        if not self.package_temp_file:
-            self.logger.warning('No thermal files found for CPU temperature monitoring.')
+    def is_relevant_temp_file(self, label):
+        return (self.cpu_type == 'Intel' and ('package' in label or 'cpu' in label)) or \
+               (self.cpu_type != 'Intel' and 'tctl' in label)
 
     def find_intel_tdp_files(self):
-        # Find the Intel TDP control files
         if self.cpu_type != "Intel":
             return
 
@@ -210,18 +357,33 @@ class CPUFileSearch:
             'tdp': 'constraint_0_power_limit_uw',
             'max_tdp': 'constraint_0_max_power_uw'
         }
+
         try:
             for root, dirs, files in os.walk('/sys/'):
                 if 'intel-rapl:0' in root:
+                    # Cache the directory and file information
+                    cached = self.directory_cache.get(root)
+                    if not cached:
+                        directory_cache.add(root, dirs, files)
+                    else:
+                        # Use cached data
+                        files = cached['files']
+
+                    # Check for required TDP files
+                    found_files = 0
                     for key, file_name in tdp_file_names.items():
                         if file_name in files:
                             self.intel_tdp_files[key] = os.path.join(root, file_name)
                             self.logger.info(f'Found Intel {key} file: {self.intel_tdp_files[key]}')
-                    if all(self.intel_tdp_files.values()):
+                            found_files += 1
+
+                    # If all required files are found, no need to continue searching
+                    if found_files == len(tdp_file_names):
                         return
         except Exception as e:
             self.logger.error(f"Error finding Intel TDP control file: {e}")
 
+        # Warn for any files that were not found after the complete search
         for key, path in self.intel_tdp_files.items():
             if not path:
                 self.logger.warning(f'Intel {key} file not found.')

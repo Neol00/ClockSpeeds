@@ -62,12 +62,11 @@ What things you need to run the application and how to install them:
 * gtk3
 * gobject-introspection
 * python-gobject
-* libappindicator-gtk3
 
 Arch Linux:
 
 ```sh
-sudo pacman -S python gtk3 gobject-introspection python-gobject libappindicator-gtk3
+sudo pacman -S python gtk3 gobject-introspection python-gobject
 ```
 
 ## License

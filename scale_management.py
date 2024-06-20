@@ -68,39 +68,48 @@ class ScaleManager:
         # Extract the thread number from the scale widget name
         try:
             return int(scale_name.split('_')[-1])
-        except ValueError:
-            self.logger.error(f"Invalid scale name format: {scale_name}")
+        except ValueError as e:
+            self.logger.error(f"Invalid scale name format or unable to extract thread number: {scale_name}, Error: {e}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Unexpected error extracting thread number from scale name: {scale_name}, Error: {e}")
             return None
 
     def update_min_max_labels(self, event):
         # Update the min and max scale labels based on user interaction
         if not event:
             return
+
         try:
-            scale_name = event.get_name()  # Get the name of the scale that triggered the event
-            source_value = event.get_value()  # Get the current value of the scale
-            thread_num = self.extract_thread_num(scale_name)  # Extract the thread number from the scale name
+            scale_name = event.get_name()  # Name of the scale that triggered the event
+            source_value = event.get_value()  # Current value of the scale
+            thread_num = self.extract_thread_num(scale_name)  # Extract the thread number
+
             if thread_num is None:
                 return
-            
-            # Get the pair of min and max scales for the current thread
+
             min_scale, max_scale = self.get_scale_pair(thread_num)
             if not (min_scale and max_scale):
                 return
-            
-            # Update the max scale value if the min scale value exceeds it
-            if 'min' in scale_name and source_value > max_scale.get_value():
-                max_scale.set_value(source_value)
-            # Update the min scale value if the max scale value is less than it
-            elif source_value < min_scale.get_value():
-                min_scale.set_value(source_value)
-            
+
+            # Determine the type of scale and apply the logic
+            is_min_scale = 'min' in scale_name
+            if is_min_scale:
+                if source_value > max_scale.get_value():
+                    max_scale.set_value(source_value)  # Adjust max if min exceeds it
+                min_scale.set_value(min(source_value, max_scale.get_value()))  # Enforce min does not exceed max
+            else:
+                if source_value < min_scale.get_value():
+                    min_scale.set_value(source_value)  # Adjust min if max falls below it
+                max_scale.set_value(max(source_value, min_scale.get_value()))  # Enforce max does not fall below min
+
             # Synchronize scales across threads if the sync option is enabled
             if global_state.sync_scales:
                 self.sync_scales(event)
             else:
                 # Set the scale range for the current thread
                 self.set_scale_range(min_scale, max_scale, thread_num)
+
         except Exception as e:
             self.logger.error(f"Error updating min-max labels: {e}")
 
@@ -129,67 +138,79 @@ class ScaleManager:
     def set_limited_range(self, min_scale, max_scale, thread_num):
         # Set the scale range to limited values based on allowed CPU frequencies
         try:
-            # Get the allowed CPU frequencies
-            min_allowed_freqs, max_allowed_freqs = cpu_manager.get_allowed_cpu_frequency()
-            if not min_allowed_freqs or not max_allowed_freqs:
-                self.logger.error("Failed to retrieve allowed CPU frequencies")
-                return
+            # Utilize caching to avoid redundant calls to the CPU manager for CPU frequencies
+            if not hasattr(self, '_cached_freqs'):
+                self._cached_freqs = cpu_manager.get_allowed_cpu_frequency()
+                if not self._cached_freqs:
+                    self.logger.error("Failed to retrieve allowed CPU frequencies")
+                    return
 
-            # Check if the thread number is valid
-            if thread_num is not None and thread_num >= len(min_allowed_freqs):
+            min_allowed_freqs, max_allowed_freqs = self._cached_freqs
+
+            # Ensure that the thread number is valid
+            if thread_num is None or thread_num >= len(min_allowed_freqs):
                 self.logger.error(f"Allowed frequencies for thread {thread_num} not found")
                 return
 
-            # Set the range for min and max scales if they are provided
+            # Set the range for min and max scales if they are provided and valid
             if min_scale and max_scale:
                 min_scale.set_range(min_allowed_freqs[thread_num], max_allowed_freqs[thread_num])
                 max_scale.set_range(min_allowed_freqs[thread_num], max_allowed_freqs[thread_num])
 
+            # Utilize caching for TDP values
+            if not hasattr(self, '_cached_tdp_values'):
+                self._cached_tdp_values = cpu_manager.get_allowed_tdp_values()
+                if self._cached_tdp_values is None:
+                    self.logger.error("Failed to retrieve allowed TDP values")
+                    return
+
             # Set the range for the TDP scale only if the CPU type is not "Other"
             if self.tdp_scale and cpu_file_search.cpu_type != "Other":
-                max_tdp_value_w = cpu_manager.get_allowed_tdp_values()
+                max_tdp_value_w = self._cached_tdp_values
                 if max_tdp_value_w is not None:
                     self.tdp_scale.set_range(global_state.TDP_SCALE_MIN, max_tdp_value_w)
-
         except Exception as e:
             self.logger.error(f"Error setting limited range: {e}")
 
     def sync_scales(self, source_scale):
         # Synchronize the values of all min and max scales based on the source scale
         try:
-            source_value = source_scale.get_value()  # Get the value of the source scale
-            is_min_scale = 'min' in source_scale.get_name()  # Determine if the source scale is a min scale
+            source_value = source_scale.get_value()
+            is_min_scale = 'min' in source_scale.get_name()
 
-            for thread_num in self.min_scales.keys():
-                # Get the pair of min and max scales for the current thread
-                min_scale, max_scale = self.get_scale_pair(thread_num)
-                if not min_scale or not max_scale:
-                    self.logger.error(f"Scale pair for thread {thread_num} not found")
-                    continue
+            # Gather current values to determine the new synchronized values efficiently
+            current_min_values = [self.min_scales[tn].get_value() for tn in self.min_scales.keys()]
+            current_max_values = [self.max_scales[tn].get_value() for tn in self.max_scales.keys()]
 
-                # Temporarily block signals to prevent recursive updates
+            if is_min_scale:
+                new_min_value = source_value
+                new_max_value = max(source_value, max(current_max_values))
+            else:
+                new_min_value = min(source_value, min(current_min_values))
+                new_max_value = source_value
+
+            # Temporarily block all signals to prevent triggering events for every change
+            for min_scale, max_scale in zip(self.min_scales.values(), self.max_scales.values()):
                 min_scale.handler_block_by_func(self.update_min_max_labels)
                 max_scale.handler_block_by_func(self.update_min_max_labels)
 
-                # Set new values for min and max scales based on the source scale
+            # Set new values for all min and max scales
+            for min_scale, max_scale in zip(self.min_scales.values(), self.max_scales.values()):
                 if is_min_scale:
-                    new_min_value = source_value
-                    new_max_value = max(source_value, max_scale.get_value())
+                    if new_min_value > max_scale.get_value():
+                        max_scale.set_value(new_min_value)
+                    min_scale.set_value(new_min_value)
                 else:
-                    new_min_value = min(source_value, min_scale.get_value())
-                    new_max_value = source_value
+                    if new_max_value < min_scale.get_value():
+                        min_scale.set_value(new_max_value)
+                    max_scale.set_value(new_max_value)
 
-                min_scale.set_value(new_min_value)
-                max_scale.set_value(new_max_value)
-
-                # Unblock signals after setting new values
+            # Unblock all signals and force a single redraw if necessary
+            for min_scale, max_scale in zip(self.min_scales.values(), self.max_scales.values()):
                 min_scale.handler_unblock_by_func(self.update_min_max_labels)
                 max_scale.handler_unblock_by_func(self.update_min_max_labels)
-
-                # Update the scale range for the current thread
-                self.set_scale_range(min_scale, max_scale, thread_num)
         except Exception as e:
-            self.logger.error(f"Error synchronizing scales: {e}")
+            self.logger.error(f"Error syncing scales: {e}")
 
     def on_disable_scale_limits_change(self, checkbutton):
         # Handle changes to the disable scale limits setting
@@ -203,7 +224,7 @@ class ScaleManager:
             
             # Update the TDP scale range if it exists
             if self.tdp_scale:
-                self.set_scale_range(tdp_scale=self.tdp_scale)
+                self.set_scale_range(tdp_scale=self.tdp_scale, thread_num=thread_num)
             
             # Save the new setting to the configuration
             config_manager.set_setting('Settings', 'disable_scale_limits', str(global_state.disable_scale_limits))

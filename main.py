@@ -20,8 +20,7 @@ import os
 import tempfile
 import gi
 gi.require_version('Gtk', '3.0')
-gi.require_version('AppIndicator3', '0.1')
-from gi.repository import Gtk, GdkPixbuf, AppIndicator3
+from gi.repository import Gtk, GdkPixbuf
 import logging
 from log_setup import get_logger
 from shared import global_state, gui_components

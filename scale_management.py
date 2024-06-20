@@ -37,6 +37,26 @@ class ScaleManager:
         self.sync_scales_checkbutton = None
         self.tdp_scale = None
 
+        # Initialize cache for CPU frequencies and TDP values
+        self._cached_freqs = None
+        self._cached_tdp_values = None
+
+        # Fetch and cache allowed frequencies and TDP values during initialization
+        self._initialize_cache()
+
+    def _initialize_cache(self):
+        # Initialize the cache for CPU frequencies and TDP values
+        try:
+            self._cached_freqs = cpu_manager.get_allowed_cpu_frequency()
+            if not self._cached_freqs:
+                self.logger.error("Failed to retrieve allowed CPU frequencies")
+            
+            self._cached_tdp_values = cpu_manager.get_allowed_tdp_values()
+            if self._cached_tdp_values is None:
+                self.logger.error("Failed to retrieve allowed TDP values")
+        except Exception as e:
+            self.logger.error(f"Error initializing cache: {e}")
+
     def setup_gui_components(self):
         # Set up references to GUI components from the shared dictionary
         try:
@@ -138,12 +158,8 @@ class ScaleManager:
     def set_limited_range(self, min_scale, max_scale, thread_num):
         # Set the scale range to limited values based on allowed CPU frequencies
         try:
-            # Utilize caching to avoid redundant calls to the CPU manager for CPU frequencies
-            if not hasattr(self, '_cached_freqs'):
-                self._cached_freqs = cpu_manager.get_allowed_cpu_frequency()
-                if not self._cached_freqs:
-                    self.logger.error("Failed to retrieve allowed CPU frequencies")
-                    return
+            if self._cached_freqs is None:
+                self._initialize_cache()
 
             min_allowed_freqs, max_allowed_freqs = self._cached_freqs
 
@@ -157,12 +173,8 @@ class ScaleManager:
                 min_scale.set_range(min_allowed_freqs[thread_num], max_allowed_freqs[thread_num])
                 max_scale.set_range(min_allowed_freqs[thread_num], max_allowed_freqs[thread_num])
 
-            # Utilize caching for TDP values
-            if not hasattr(self, '_cached_tdp_values'):
-                self._cached_tdp_values = cpu_manager.get_allowed_tdp_values()
-                if self._cached_tdp_values is None:
-                    self.logger.error("Failed to retrieve allowed TDP values")
-                    return
+            if self._cached_tdp_values is None:
+                self._initialize_cache()
 
             # Set the range for the TDP scale only if the CPU type is not "Other"
             if self.tdp_scale and cpu_file_search.cpu_type != "Other":

@@ -18,8 +18,7 @@
 
 import os
 import gi
-gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, GLib
+from gi.repository import GLib
 import logging
 from log_setup import get_logger
 from config_setup import config_manager
@@ -193,10 +192,16 @@ class CPUManager:
             return None
 
     def parse_cpu_info(self, cpuinfo_file):
-        # Parse the CPU information file to extract model name, cache sizes, and core counts
+        # Parse the CPU information file to extract model name and core counts
         try:
             model_name = None  # To store the CPU model name
-            cache_sizes = {"L1": None, "L2": None, "L3": None}  # Dictionary to store cache sizes
+            # Dictionary to store cache sizes using new method
+            cache_sizes = {
+                "L1 Data": cpu_file_search.cache_files.get("1_Data", None),
+                "L1 Instruction": cpu_file_search.cache_files.get("1_Instruction", None),
+                "L2 Unified": cpu_file_search.cache_files.get("2_Unified", None),
+                "L3 Unified": cpu_file_search.cache_files.get("3_Unified", None)
+            }
             physical_cores = 0  # To store the number of physical cores
             virtual_cores = cpu_file_search.thread_count  # Number of virtual cores (threads)
 
@@ -206,16 +211,6 @@ class CPUManager:
                     # Extract the model name
                     if line.startswith('model name') and not model_name:
                         model_name = line.split(':')[1].strip()
-                    # Extract the L3 cache size
-                    elif line.startswith('cache size') and not cache_sizes["L3"]:
-                        cache_sizes["L3"] = line.split(':')[1].strip()
-                    # Extract the cache sizes
-                    elif 'L1d cache' in line and not cache_sizes["L1"]:
-                        cache_sizes["L1"] = line.split(':')[1].strip()
-                    elif 'L2 cache' in line and not cache_sizes["L2"]:
-                        cache_sizes["L2"] = line.split(':')[1].strip()
-                    elif 'L3 cache' in line and not cache_sizes["L3"]:
-                        cache_sizes["L3"] = line.split(':')[1].strip()
                     # Extract the number of physical cores
                     elif line.startswith('cpu cores') and not physical_cores:
                         physical_cores = int(line.split(':')[1].strip())

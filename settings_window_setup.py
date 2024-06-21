@@ -104,7 +104,7 @@ class SettingsWindow:
                 self.general_fixed, "Update Interval Seconds:", x=20, y=100)
 
             interval_spinbutton = widget_factory.create_spinbutton(
-                self.general_fixed, cpu_manager.update_interval, 0.1, 20.0, 0.1, 1, 0.1, 1, self.on_interval_changed, x=45, y=120)
+                self.general_fixed, cpu_manager.update_interval, 0.1, 20.0, 0.1, 1, 0.1, 1, self.on_interval_changed, x=45, y=125)
 
             # Create the CSS combobox
             css_values = css_manager.get_installed_gtk_css()

@@ -36,18 +36,13 @@ class ClockSpeedsApp:
         # Initialize the logger
         self.logger = get_logger()
 
-        # Create the main application window
-        self.window = Gtk.Window(title="ClockSpeeds")
-        self.window.set_default_size(535, 350)
-        self.window.set_resizable(False)
-        self.window.connect("destroy", Gtk.main_quit)  # Connect the window's destroy event to Gtk.main_quit
-
         # Set up the directory and icon paths
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
         self.icon_path = os.path.join(self.script_dir, "icon", "ClockSpeeds-Icon.png")
         self.pixbuf128 = GdkPixbuf.Pixbuf.new_from_file_at_scale(self.icon_path, 128, 128, True)
 
         # Call methods on startup
+        self.setup_main_window()
         self.setup_main_box()
         self.create_main_notebook()
         self.create_more_button()
@@ -59,13 +54,23 @@ class ClockSpeedsApp:
         self.update_cpu_widgets()
         self.set_window_icon()
 
+    def setup_main_window(self):
+        # Create the main application window
+        try:
+            self.window = Gtk.Window(title="ClockSpeeds")
+            self.window.set_default_size(535, 350)
+            self.window.set_resizable(False)  # Make the window non-resizable
+            self.window.connect("destroy", Gtk.main_quit)  # Connect the window's destroy event to Gtk.main_quit
+        except Exception as e:
+            self.logger.error(f"Error setting up main window: {e}")
+
     def setup_main_box(self):
         # Set up the main box layout
         try:
             self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
             self.window.add(self.main_box)
         except Exception as e:
-            self.logger.error(f"Error setting up main window: {e}")
+            self.logger.error(f"Error setting up main box: {e}")
 
     def create_main_notebook(self):
         # Create the main notebook widget with tabs
@@ -342,7 +347,7 @@ class ClockSpeedsApp:
             apply_button = widget_factory.create_button(self.control_fixed, "Apply Speed Limits", cpu_manager.apply_cpu_clock_speed_limits, x=185, y=y_offset + 80)
             apply_button.set_tooltip_text("Apply Minimum And Maximum Speed Limits")
 
-            self.governor_combobox = widget_factory.create_combobox(self.control_fixed, global_state.unique_governors, cpu_manager.on_governor_change, x=90, y=y_offset + 115)
+            self.governor_combobox = widget_factory.create_combobox(self.control_fixed, global_state.unique_governors, cpu_manager.on_governor_change, x=100, y=y_offset + 118)
 
             self.boost_checkbutton = widget_factory.create_checkbutton(self.control_fixed, "Enable CPU Boost Clock", global_state.boost_enabled, cpu_manager.toggle_boost, x=265, y=y_offset + 120)
 
@@ -367,9 +372,6 @@ class ClockSpeedsApp:
                 tdp_label.hide()
                 self.tdp_scale.hide()
                 apply_tdp_button.hide()
-
-                self.governor_combobox.set_y(y_offset + 160)
-                self.boost_checkbutton.set_y(y_offset + 180)
 
             self.logger.info("Control widgets created.")
         except Exception as e:

@@ -27,28 +27,25 @@ class GlobalState:
 
         # Spacing used in the GUI
         self.SPACING = 5
-        
+
         # Minimum and maximum scale values for CPU frequency adjustment
         self.SCALE_MIN = int(config_manager.get_setting('Settings', 'clock_scale_minimum', 1))
         self.SCALE_MAX = int(config_manager.get_setting('Settings', 'clock_scale_maximum', 6000))
-        
+
         # Minimum and maximum scale values for TDP adjustment
         self.TDP_SCALE_MIN = int(config_manager.get_setting('Settings', 'tdp_scale_minimum', 1))
         self.TDP_SCALE_MAX = int(config_manager.get_setting('Settings', 'tdp_scale_maximum', 400))
-        
-        # Vertical offset for widget placement
-        self.y_offset = 0
 
         # Set to hold unique CPU governors
         self.unique_governors = set()
-        
+
         # State of the CPU boost feature
         self.boost_enabled = None
-        
+
         # Flags to control the scaling limits and synchronization
         self.disable_scale_limits = False
         self.sync_scales = False
-        
+
         # Maximum TDP value
         self.max_tdp_value = None
 

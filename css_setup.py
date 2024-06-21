@@ -98,7 +98,6 @@ class CssManager:
         }
 
         combobox * {
-            padding: 1px 4px;
             border-radius: 8px;
         }
     """
@@ -130,12 +129,12 @@ class CssManager:
         try:
             if css_name is None:
                 css_name = self.load_css_config()
-            self.logger.info(f"Applying css: {css_name}")
+            self.logger.info(f"Applying CSS: {css_name}")
             settings = Gtk.Settings.get_default()
             settings.set_property("gtk-theme-name", css_name)
             self.apply_css(self.CSS_SYSTEM)
         except Exception as e:
-            self.logger.error(f"Error applying css: {e}")
+            self.logger.error(f"Error applying CSS: {e}")
 
     def is_valid_css(self, css_name):
         # Check if the provided CSS name is a valid installed theme

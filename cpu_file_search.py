@@ -156,6 +156,9 @@ class CPUFileSearch:
         # Dictionary to hold paths to Intel TDP files
         self.intel_tdp_files = {'tdp': None, 'max_tdp': None}
 
+        # Dictionary to hold cache size files
+        self.cache_files = {}
+
         # Load paths from cache
         cached_directories = self.directory_cache.load_directories_from_file()
         if cached_directories:
@@ -170,6 +173,7 @@ class CPUFileSearch:
         self.package_temp_file = cached_directories["package_temp_file"]
         self.proc_files = cached_directories["proc_files"]
         self.intel_tdp_files = cached_directories["intel_tdp_files"]
+        self.cache_files = cached_directories["cache_files"]
         self.cpu_files = {key: {int(k): v for k, v in value.items()} for key, value in cached_directories["cpu_files"].items()}
         self.cpu_type = "Intel" if self.intel_boost_path else "Other"
 
@@ -211,6 +215,7 @@ class CPUFileSearch:
             self.find_proc_files()
             self.find_thermal_file()
             self.find_intel_tdp_files()
+            self.find_cache_files()
 
             # Save the paths to the cache
             directories_to_save = {
@@ -219,7 +224,8 @@ class CPUFileSearch:
                 "intel_boost_path": self.intel_boost_path,
                 "package_temp_file": self.package_temp_file,
                 "proc_files": self.proc_files,
-                "intel_tdp_files": self.intel_tdp_files
+                "intel_tdp_files": self.intel_tdp_files,
+                "cache_files": self.cache_files
             }
             self.directory_cache.save_directories_to_file(directories_to_save)
         except Exception as e:
@@ -300,7 +306,6 @@ class CPUFileSearch:
         # Find necessary /proc files
         proc_file_names = ['stat', 'cpuinfo', 'meminfo']
         need_to_find = set(proc_file_names)
-
         try:
             found_files = 0
             for root, dirs, files in self.directory_cache.cached_directory_walk(base_path):
@@ -356,7 +361,6 @@ class CPUFileSearch:
             'tdp': 'constraint_0_power_limit_uw',
             'max_tdp': 'constraint_0_max_power_uw'
         }
-
         try:
             for root, dirs, files in os.walk('/sys/'):
                 if 'intel-rapl:0' in root:
@@ -379,6 +383,27 @@ class CPUFileSearch:
         for key, path in self.intel_tdp_files.items():
             if not path:
                 self.logger.warning(f'Intel {key} file not found.')
+
+    def find_cache_files(self):
+        # Find cache size files in the CPU directory
+        if self.cpu_directory:
+            base_path = os.path.join(self.cpu_directory, 'cpu0')  # Starting with cpu0 for simplicity
+            cache_path = os.path.join(base_path, 'cache')
+            try:
+                for root, dirs, files in self.directory_cache.cached_directory_walk(cache_path):
+                    for dir_name in dirs:
+                        cache_index_path = os.path.join(root, dir_name)
+                        size_file = os.path.join(cache_index_path, 'size')
+                        level_file = os.path.join(cache_index_path, 'level')
+                        type_file = os.path.join(cache_index_path, 'type')
+                        if os.path.exists(size_file) and os.path.exists(level_file) and os.path.exists(type_file):
+                            with open(level_file, 'r') as lf, open(type_file, 'r') as tf, open(size_file, 'r') as sf:
+                                level = lf.read().strip()
+                                type_ = tf.read().strip()
+                                size = sf.read().strip()
+                                self.cache_files[f"{level}_{type_}"] = size
+            except Exception as e:
+                self.logger.error(f"Error searching cache directory: {e}")
 
 # Create an instance of CPUFileSearch
 cpu_file_search = CPUFileSearch()

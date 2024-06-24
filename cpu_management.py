@@ -195,7 +195,7 @@ class CPUManager:
         # Parse the CPU information file to extract model name and core counts
         try:
             model_name = None  # To store the CPU model name
-            # Dictionary to store cache sizes using new method
+            # Dictionary to store cache sizes
             cache_sizes = {
                 "L1 Data": cpu_file_search.cache_files.get("1_Data", None),
                 "L1 Instruction": cpu_file_search.cache_files.get("1_Instruction", None),
@@ -234,69 +234,33 @@ class CPUManager:
             self.logger.error(f"Error reading meminfo file: {e}")
         return total_ram
 
-    def apply_cpu_clock_speed_limits(self, widget=None):
-        # Apply the minimum and maximum CPU clock speed limits to each CPU thread
+    def get_allowed_cpu_frequency(self):
+        # Get the allowed CPU frequencies from the system files
         try:
-            command_list = []  # List to store commands
+            min_allowed_freqs = []
+            max_allowed_freqs = []
 
             for i in range(cpu_file_search.thread_count):
-                try:
-                    # Retrieve the min and max scales and checkbutton for the current thread
-                    min_scale = self.min_scales[i]
-                    max_scale = self.max_scales[i]
-                    checkbutton = self.cpu_min_max_checkbuttons[i]
-                except KeyError:
-                    self.logger.error(f"Scale or checkbutton widget for thread {i} not found.")
-                    continue  # Skip to the next thread
+                min_freq_file = cpu_file_search.cpu_files['cpuinfo_min_files'].get(i)
+                max_freq_file = cpu_file_search.cpu_files['cpuinfo_max_files'].get(i)
 
-                if checkbutton.get_active():
-                    # If the checkbutton is active, retrieve and validate the min and max speeds
-                    try:
-                        min_speed = int(min_scale.get_value())
-                        max_speed = int(max_scale.get_value())
-                    except ValueError:
-                        self.logger.error(f"Invalid input: CPU speeds must be a number for thread {i}.")
-                        continue  # Skip to the next thread
+                if not min_freq_file or not max_freq_file:
+                    self.logger.error(f"Min or max frequency file not found for thread {i}")
+                    continue
 
-                    # Validate the min and max speed values
-                    if not (0 <= min_speed <= max_speed <= 6000):
-                        self.logger.error(f"Invalid input: Please enter valid CPU speed limits for thread {i}.")
-                        continue  # Skip to the next thread
+                with open(min_freq_file) as min_file:
+                    min_freq_mhz = int(min_file.read()) / 1000  # Convert from kHz to MHz
+                    min_allowed_freqs.append(min_freq_mhz)
 
-                    self.logger.info(f"Applying clockspeed for thread {i}")
+                with open(max_freq_file) as max_file:
+                    max_freq_mhz = int(max_file.read()) / 1000  # Convert from kHz to MHz
+                    max_allowed_freqs.append(max_freq_mhz)
 
-                    # Convert speeds to KHz
-                    min_frequency_in_khz = min_speed * 1000
-                    max_frequency_in_khz = max_speed * 1000
-
-                    # Get the file paths for setting min and max frequencies
-                    max_file = cpu_file_search.cpu_files['scaling_max_files'].get(i)
-                    min_file = cpu_file_search.cpu_files['scaling_min_files'].get(i)
-                    if max_file and min_file:
-                        # Create the commands to apply the min and max frequencies
-                        max_command = f'echo {max_frequency_in_khz} | tee {max_file} > /dev/null'
-                        min_command = f'echo {min_frequency_in_khz} | tee {min_file} > /dev/null'
-                        command_list.extend([max_command, min_command])
-                else:
-                    self.logger.info(f"Skipping clockspeed for thread {i} as checkbutton is not active")
-
-            if command_list:
-                # If there are commands to execute, run them with pkexec
-                full_command = ' && '.join(command_list)
-                success, error_message = privileged_actions.run_pkexec_command(full_command)
-                if success:
-                    # Update labels if the command was successful
-                    self.update_min_max_labels()
-                else:
-                    if error_message == 'canceled':
-                        self.logger.info("User canceled the min / max CPU clock speed limits operation.")
-                    else:
-                        self.logger.error(error_message)
-            else:
-                self.logger.error("No CPU files found to apply clock speed limits.")
+            return min_allowed_freqs, max_allowed_freqs
 
         except Exception as e:
-            self.logger.error(f"Error applying CPU clock speed limits: {e}")
+            self.logger.error(f"Error getting CPU frequencies: {e}")
+            return None, None
 
     def read_cpu_speeds(self):
         # Read the current CPU speeds from the appropriate system files
@@ -427,16 +391,19 @@ class CPUManager:
 
     def read_and_parse_temperature(self):
         # Read and parse the CPU package temperature
-        if cpu_file_search.package_temp_file:
-            if os.path.exists(cpu_file_search.package_temp_file):
-                with open(cpu_file_search.package_temp_file, 'r') as file:
-                    temp_str = file.read().strip()
-                    if temp_str.isdigit():
-                        temp_celsius = int(temp_str) / 1000  # Convert from millidegrees to degrees Celsius
-                        return temp_str, temp_celsius
-                    else:
-                        self.logger.error("Temperature reading is not a valid number.")
-        self.logger.error("No package temperature file found.")
+        try:
+            if cpu_file_search.package_temp_file:
+                if os.path.exists(cpu_file_search.package_temp_file):
+                    with open(cpu_file_search.package_temp_file, 'r') as file:
+                        temp_str = file.read().strip()
+                        if temp_str.isdigit():
+                            temp_celsius = int(temp_str) / 1000  # Convert from millidegrees to degrees Celsius
+                            return temp_str, temp_celsius
+                        else:
+                            self.logger.error("Temperature reading is not a valid number.")
+            self.logger.error("No package temperature file found.")
+        except Exception as e:
+            self.logger.error(f"Error parsing temperature file: {e}")
         return None, None
 
     def read_package_temperature(self):
@@ -471,63 +438,12 @@ class CPUManager:
             if self.is_throttling:
                 # Update the label to indicate throttling
                 self.thermal_throttle_label.set_markup('<span foreground="red">Throttling</span>')
-                self.thermal_throttle_label.show()
+                self.thermal_throttle_label.set_visible(True)
             else:
-                self.thermal_throttle_label.hide()
+                self.thermal_throttle_label.set_visible(False)
 
         except Exception as e:
             self.logger.error(f"Error updating throttle widget: {e}")
-
-    def set_cpu_governor(self, governor):
-        # Set the CPU governor for all CPU threads
-        try:
-            command_list = []  # List to store commands to set the governor
-
-            for i in range(cpu_file_search.thread_count):
-                governor_file = cpu_file_search.cpu_files['governor_files'].get(i)
-                if governor_file:
-                    # Add command to set the governor for the current thread
-                    command_list.append(f'echo "{governor}" | sudo tee {governor_file} > /dev/null')
-
-            if command_list:
-                # If there are commands to execute, run them with pkexec
-                full_command = ' && '.join(command_list)
-                success, error_message = privileged_actions.run_pkexec_command(full_command)
-                if success:
-                    return True
-                else:
-                    if error_message == 'canceled':
-                        self.logger.info("User canceled the toggling of CPU governors operation.")
-                    else:
-                        self.logger.error(error_message)
-                    return False
-            else:
-                self.logger.error("No CPU governor files found to apply clock speed limits.")
-                return False
-
-        except Exception as e:
-            self.logger.error(f"Error setting CPU governor: {e}")
-            return False
-
-    def on_governor_change(self, combobox):
-        # Handle the change of CPU governor from the combobox
-        try:
-            model = combobox.get_model()
-            active_iter = combobox.get_active_iter()
-            if active_iter is not None:
-                selected_governor = model[active_iter][0]
-                if selected_governor == "Select Governor":
-                    return  # Do nothing if placeholder is selected
-
-                if selected_governor in self.valid_governors:
-                    success = self.set_cpu_governor(selected_governor)
-                    if not success:
-                        GLib.idle_add(lambda: combobox.set_active(0))  # Reset combobox on failure
-                else:
-                    self.logger.error(f"Invalid CPU governor selected: {selected_governor}")
-                    GLib.idle_add(lambda: combobox.set_active(0))
-        except Exception as e:
-            self.logger.error(f"An error occurred while handling CPU governor change: {e}")
 
     def read_and_get_governor(self):
         # Read the current CPU governor from the system file
@@ -575,47 +491,208 @@ class CPUManager:
         # Set the active index to 0, which is the "Select Governor" placeholder
         self.governor_combobox.set_active(0)
 
-    def toggle_boost(self, widget=None):
-        # Toggle the CPU boost clock on or off
+    def apply_cpu_clock_speed_limits(self, widget=None):
+        # Apply the minimum and maximum CPU clock speed limits to each CPU thread
         try:
-            current_status = self.find_boost_type()  # Get the current boost status
-            is_enabled = not current_status  # Determine the new boost status
+            command_list = []  # List to store commands
 
-            command_list = []  # List to store commands to toggle boost
+            def retrieve_widgets_for_thread(i):
+                # Retrieve the min and max scales and checkbutton for the current thread
+                try:
+                    min_scale = self.min_scales[i]
+                    max_scale = self.max_scales[i]
+                    checkbutton = self.cpu_min_max_checkbuttons[i]
+                    return min_scale, max_scale, checkbutton
+                except KeyError:
+                    self.logger.error(f"Scale or checkbutton widget for thread {i} not found.")
+                    return None, None, None
 
-            if cpu_file_search.cpu_type == "Intel" and cpu_file_search.intel_boost_path:
-                # For Intel CPUs, set the boost value based on the new status
-                value = '0' if is_enabled else '1'
-                command_list.append(f'echo {value} | sudo tee {cpu_file_search.intel_boost_path} > /dev/null')
-            else:
-                # For non-Intel CPUs, toggle the boost for each thread
-                for i in range(cpu_file_search.thread_count):
-                    boost_file = cpu_file_search.cpu_files['boost_files'].get(i)
-                    if boost_file:
-                        value = '1' if is_enabled else '0'
-                        command_list.append(f'echo {value} | sudo tee {boost_file} > /dev/null')
+            def validate_and_get_speeds(min_scale, max_scale, i):
+                # Retrieve and validate the min and max speeds
+                try:
+                    min_speed = int(min_scale.get_value())
+                    max_speed = int(max_scale.get_value())
+                    if not (0 <= min_speed <= max_speed <= 6000):
+                        self.logger.error(f"Invalid input: Please enter valid CPU speed limits for thread {i}.")
+                        return None, None
+                    return min_speed, max_speed
+                except ValueError:
+                    self.logger.error(f"Invalid input: CPU speeds must be a number for thread {i}.")
+                    return None, None
+
+            def get_frequency_commands(min_speed, max_speed, i):
+                # Convert speeds to KHz and get the commands to apply the min and max frequencies
+                min_frequency_in_khz = min_speed * 1000
+                max_frequency_in_khz = max_speed * 1000
+
+                max_file = cpu_file_search.cpu_files['scaling_max_files'].get(i)
+                min_file = cpu_file_search.cpu_files['scaling_min_files'].get(i)
+
+                if max_file and min_file:
+                    max_command = f'echo {max_frequency_in_khz} | tee {max_file} > /dev/null'
+                    min_command = f'echo {min_frequency_in_khz} | tee {min_file} > /dev/null'
+                    return max_command, min_command
+                return None, None
+
+            def success_callback():
+                self.logger.info("Successfully applied CPU clock speed limits.")
+                self.update_min_max_labels()
+
+            def failure_callback(error_message):
+                # Handle failures from pkexec command
+                if error_message == 'canceled':
+                    self.logger.info("User canceled the min / max frequency pkexec prompt.")
+                else:
+                    self.logger.error(f"Failed to apply CPU clock speed limits: {error_message}")
+
+            for i in range(cpu_file_search.thread_count):
+                min_scale, max_scale, checkbutton = retrieve_widgets_for_thread(i)
+                if min_scale is None or max_scale is None or checkbutton is None:
+                    continue  # Skip to the next thread if widgets are not found
+
+                if checkbutton.get_active():
+                    min_speed, max_speed = validate_and_get_speeds(min_scale, max_scale, i)
+                    if min_speed is None or max_speed is None:
+                        continue  # Skip to the next thread if speeds are invalid
+
+                    self.logger.info(f"Applying clock speed for thread {i}")
+                    max_command, min_command = get_frequency_commands(min_speed, max_speed, i)
+                    if max_command is None or min_command is None:
+                        self.logger.error(f"Failed to get frequency commands for thread {i}")
+                        continue  # Skip to the next thread if commands are invalid
+
+                    command_list.extend([max_command, min_command])
+                else:
+                    self.logger.info(f"Skipping clock speed for thread {i} as checkbutton is not active")
 
             if command_list:
                 # If there are commands to execute, run them with pkexec
                 full_command = ' && '.join(command_list)
-                success, error_message = privileged_actions.run_pkexec_command(full_command)
-                if success:
-                    global_state.boost_enabled = is_enabled  # Update the global state
-                    self.update_boost_checkbutton()  # Update the checkbutton state
-                    self.logger.info("CPU boost toggled successfully.")
-                elif error_message == 'canceled':
-                    self.logger.info("User canceled the CPU boost clock toggle operation.")
-                    self.update_boost_checkbutton()  # Reset the checkbutton state to the current status
-                else:
-                    self.logger.error("Failed to toggle CPU boost: " + error_message)
-                    self.update_boost_checkbutton()  # Reset the checkbutton state to the current status
-            elif cpu_file_search.cpu_type != "Intel":
-                # Log only if expected to have boost files
-                self.logger.info("No boost control files found for non-Intel CPUs.")
+                privileged_actions.run_pkexec_command(full_command, success_callback=success_callback, failure_callback=failure_callback)
+            else:
+                self.logger.error("No commands generated to apply clock speed limits.")
 
         except Exception as e:
+            self.logger.error(f"Error applying CPU clock speed limits: {e}")
+
+    def set_cpu_governor(self, governor):
+        # Set the CPU governor for all CPU threads
+        try:
+            def get_command_list():
+                # Generate the command list to set the governor
+                command_list = []
+                for i in range(cpu_file_search.thread_count):
+                    governor_file = cpu_file_search.cpu_files['governor_files'].get(i)
+                    if governor_file:
+                        command_list.append(f'echo "{governor}" | sudo tee {governor_file} > /dev/null')
+                return command_list
+
+            def failure_callback(error_message):
+                # Handle failures from pkexec command
+                self.logger.error(error_message)
+
+            command_list = get_command_list()
+            if command_list:
+                # If there are commands to execute, run them with pkexec
+                full_command = ' && '.join(command_list)
+                success, error_message = privileged_actions.run_pkexec_command(full_command, failure_callback=failure_callback)
+                if success:
+                    return True
+                return False
+            else:
+                self.logger.error("No CPU governor files found to apply clock speed limits.")
+                return False
+        except Exception as e:
+            self.logger.error(f"Error setting CPU governor: {e}")
+            return False
+
+    def on_governor_change(self, combobox):
+        # Handle the change of CPU governor from the combobox
+        try:
+            model = combobox.get_model()
+            active_iter = combobox.get_active_iter()
+            if active_iter is not None:
+                selected_governor = model[active_iter][0]
+                if selected_governor == "Select Governor":
+                    return  # Do nothing if placeholder is selected
+
+                if selected_governor in self.valid_governors:
+                    self.logger.info(f"Setting CPU governor to: {selected_governor}")
+                    
+                    def success_callback():
+                        self.logger.info(f"Successfully set governor to {selected_governor}")
+                    
+                    def failure_callback(error):
+                        if error == 'canceled':
+                            self.logger.info("User canceled the governor change pkexec prompt.")
+                        else:
+                            self.logger.error(f"Failed to set CPU governor: {error}")
+                        GLib.idle_add(lambda: combobox.set_active(0))
+                    
+                    privileged_actions.run_pkexec_command(
+                        command=f'cpupower frequency-set -g {selected_governor}',
+                        success_callback=success_callback,
+                        failure_callback=failure_callback
+                    )
+                else:
+                    self.logger.error(f"Invalid CPU governor selected: {selected_governor}")
+                    GLib.idle_add(lambda: combobox.set_active(0))
+        except Exception as e:
+            self.logger.error(f"An error occurred while handling CPU governor change: {e}")
+
+    def toggle_boost(self, widget=None):
+        # Toggle the CPU boost clock on or off
+        try:
+            self.stop_control_tasks()  # Stop the control tasks while the method is running
+            current_status = self.find_boost_type()  # Get the current boost status
+            is_enabled = not current_status  # Determine the new boost status
+
+            def get_command_list():
+                # Generate the command list to toggle boost
+                command_list = []
+                if cpu_file_search.cpu_type == "Intel" and cpu_file_search.intel_boost_path:
+                    # For Intel CPUs, set the boost value based on the new status
+                    value = '0' if is_enabled else '1'
+                    command_list.append(f'echo {value} | sudo tee {cpu_file_search.intel_boost_path} > /dev/null')
+                else:
+                    # For non-Intel CPUs, toggle the boost for each thread
+                    for i in range(cpu_file_search.thread_count):
+                        boost_file = cpu_file_search.cpu_files['boost_files'].get(i)
+                        if boost_file:
+                            value = '1' if is_enabled else '0'
+                            command_list.append(f'echo {value} | sudo tee {boost_file} > /dev/null')
+                return command_list
+
+            def success_callback():
+                # Handle successful execution of pkexec command
+                global_state.boost_enabled = is_enabled  # Update the global state
+                self.schedule_control_tasks()  # Restart the control tasks
+                self.update_boost_checkbutton()  # Update the checkbutton state
+                self.logger.info("CPU boost toggled successfully.")
+
+            def failure_callback(error_message):
+                # Handle failures from pkexec command
+                if error_message == 'canceled':
+                    self.logger.info("User canceled the CPU boost pkexec prompt.")
+                else:
+                    self.logger.error("Failed to toggle CPU boost: " + error_message)
+                self.schedule_control_tasks()
+                self.update_boost_checkbutton()
+
+            command_list = get_command_list()
+            
+            if command_list:
+                # If there are commands to execute, run them with pkexec
+                full_command = ' && '.join(command_list)
+                privileged_actions.run_pkexec_command(full_command, success_callback=success_callback, failure_callback=failure_callback)
+            else:
+                self.logger.error("No commands generated to toggle CPU boost.")
+                self.schedule_control_tasks()
+                self.update_boost_checkbutton()
+        except Exception as e:
             self.logger.error(f"Error toggling CPU boost: {e}")
-            self.update_boost_checkbutton()  # Reset the checkbutton state to the current status
+            self.schedule_control_tasks()
+            self.update_boost_checkbutton()
 
     def find_boost_type(self):
         # Determine which boost files are correct for your CPU type
@@ -648,9 +725,9 @@ class CPUManager:
         try:
             current_status = self.find_boost_type()
             if current_status is None:
-                self.boost_checkbutton.hide()
+                self.boost_checkbutton.set_visible(False)
             else:
-                self.boost_checkbutton.show()
+                self.boost_checkbutton.set_visible(True)
                 if self.boost_checkbutton.get_active() != current_status:
                     self.boost_checkbutton.handler_block_by_func(self.toggle_boost)
                     self.boost_checkbutton.set_active(current_status)
@@ -661,30 +738,49 @@ class CPUManager:
     def set_intel_tdp(self, widget=None):
         # Set the TDP (Thermal Design Power) for Intel CPUs
         try:
-            if cpu_file_search.cpu_type != "Intel":
-                self.logger.error("TDP control is only supported for Intel CPUs.")
-                return False
-
-            tdp_file = cpu_file_search.intel_tdp_files['tdp']
-            if not tdp_file or not os.path.exists(tdp_file):
-                self.logger.error("Intel TDP control file not found.")
-                return False
-
-            tdp_value_watts = self.tdp_scale.get_value()
-            tdp_value_microwatts = int(tdp_value_watts * 1_000_000)  # Convert watts to microwatts
-
-            # Create the command to set the TDP value
-            command = f'echo {tdp_value_microwatts} | sudo tee {tdp_file} > /dev/null'
-            success, error_message = privileged_actions.run_pkexec_command(command)
-            if success:
-                self.logger.info(f"Successfully set TDP to {tdp_value_microwatts} microwatts.")
+            def validate_cpu_type():
+                # Validate the CPU type
+                if cpu_file_search.cpu_type != "Intel":
+                    self.logger.error("TDP control is only supported for Intel CPUs.")
+                    return False
                 return True
-            else:
+
+            def get_tdp_file():
+                # Retrieve the TDP control file path
+                tdp_file = cpu_file_search.intel_tdp_files['tdp']
+                if not tdp_file or not os.path.exists(tdp_file):
+                    self.logger.error("Intel TDP control file not found.")
+                    return None
+                return tdp_file
+
+            def create_tdp_command(tdp_file):
+                # Create the command to set the TDP value
+                tdp_value_watts = self.tdp_scale.get_value()
+                tdp_value_microwatts = int(tdp_value_watts * 1_000_000)  # Convert watts to microwatts
+                command = f'echo {tdp_value_microwatts} | sudo tee {tdp_file} > /dev/null'
+                return command, tdp_value_microwatts
+
+            def success_callback():
+                self.logger.info(f"Successfully set TDP.")
+
+            def failure_callback(error_message):
+                # Handle failures from pkexec command
                 if error_message == 'canceled':
-                    self.logger.info("User canceled the TDP control operation.")
+                    self.logger.info("User canceled the TDP pkexec prompt.")
                 else:
-                    self.logger.error(error_message)
+                    self.logger.error(f"Failed to set TDP for Intel CPU: {error_message}")
+
+            if not validate_cpu_type():
                 return False
+
+            tdp_file = get_tdp_file()
+            if not tdp_file:
+                return False
+
+            command, tdp_value_microwatts = create_tdp_command(tdp_file)
+            privileged_actions.run_pkexec_command(command, success_callback=success_callback, failure_callback=failure_callback)
+            return True
+
         except Exception as e:
             self.logger.error(f"Error setting Intel TDP: {e}")
             return False
@@ -692,55 +788,40 @@ class CPUManager:
     def set_ryzen_tdp(self, widget=None):
         # Set the TDP (Thermal Design Power) for AMD Ryzen CPUs
         try:
-            if cpu_file_search.cpu_type != "Other":
-                self.logger.error("TDP control with ryzen_smu is only supported for AMD Ryzen CPUs.")
-                return False
-
-            tdp_value_watts = self.tdp_scale.get_value()
-            tdp_value_milliwatts = int(tdp_value_watts * 1000)  # Convert watts to milliwatts
-
-            # Create the command to set the TDP value
-            command = f"printf '%0*x' 48 {tdp_value_milliwatts} | fold -w 2 | tac | tr -d '\\n' | xxd -r -p | sudo tee /sys/kernel/ryzen_smu_drv/smu_args && printf '\\x53' | sudo tee /sys/kernel/ryzen_smu_drv/rsmu_cmd"
-
-            # Execute the command
-            process = privileged_actions.run_pkexec_command(command)
-            if process.returncode == 0:
-                self.logger.info(f"Successfully set TDP to {tdp_value_milliwatts} milliwatts for Ryzen CPU.")
+            def validate_cpu_type():
+                # Validate the CPU type
+                if cpu_file_search.cpu_type != "Other":
+                    self.logger.error("TDP control with ryzen_smu is only supported for AMD Ryzen CPUs.")
+                    return False
                 return True
-            else:
-                self.logger.error(f"Failed to set TDP for Ryzen CPU. Error: {process.stderr}")
+
+            def create_tdp_command():
+                # Create the command to set the TDP value
+                tdp_value_watts = self.tdp_scale.get_value()
+                tdp_value_milliwatts = int(tdp_value_watts * 1000)  # Convert watts to milliwatts
+                command = f"printf '%0*x' 48 {tdp_value_milliwatts} | fold -w 2 | tac | tr -d '\\n' | xxd -r -p | sudo tee /sys/kernel/ryzen_smu_drv/smu_args && printf '\\x53' | sudo tee /sys/kernel/ryzen_smu_drv/rsmu_cmd"
+                return command, tdp_value_milliwatts
+
+            def success_callback():
+                self.logger.info(f"Successfully set TDP")
+
+            def failure_callback(error_message):
+                # Handle failures from pkexec command
+                if error_message == 'canceled':
+                    self.logger.info("User canceled the TDP pkexec prompt.")
+                else:
+                    self.logger.error(f"Failed to set TDP for Ryzen CPU: {error_message}")
+
+            if not validate_cpu_type():
                 return False
+
+            command, tdp_value_milliwatts = create_tdp_command()
+            privileged_actions.run_pkexec_command(command, success_callback=success_callback, failure_callback=failure_callback)
+            return True
+
         except Exception as e:
             self.logger.error(f"Error setting Ryzen TDP: {e}")
             return False
-
-    def get_allowed_cpu_frequency(self):
-        # Get the allowed CPU frequencies from the system files
-        try:
-            min_allowed_freqs = []
-            max_allowed_freqs = []
-
-            for i in range(cpu_file_search.thread_count):
-                min_freq_file = cpu_file_search.cpu_files['cpuinfo_min_files'].get(i)
-                max_freq_file = cpu_file_search.cpu_files['cpuinfo_max_files'].get(i)
-
-                if not min_freq_file or not max_freq_file:
-                    self.logger.error(f"Min or max frequency file not found for thread {i}")
-                    continue
-
-                with open(min_freq_file) as min_file:
-                    min_freq_mhz = int(min_file.read()) / 1000  # Convert from kHz to MHz
-                    min_allowed_freqs.append(min_freq_mhz)
-
-                with open(max_freq_file) as max_file:
-                    max_freq_mhz = int(max_file.read()) / 1000  # Convert from kHz to MHz
-                    max_allowed_freqs.append(max_freq_mhz)
-
-            return min_allowed_freqs, max_allowed_freqs
-
-        except Exception as e:
-            self.logger.error(f"Error getting CPU frequencies: {e}")
-            return None, None
 
     def get_allowed_tdp_values(self):
         # First, check the CPU type

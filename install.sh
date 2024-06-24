@@ -13,9 +13,9 @@ fi
 mkdir -p $HOME/.local/share/applications
 
 # Create the .desktop file
-cat << EOF > $HOME/.local/share/applications/ClockSpeeds.desktop
+cat << EOF > $HOME/.local/share/applications/org.ClockSpeeds.desktop
 [Desktop Entry]
-Version=0.1
+Version=0.11
 Type=Application
 Name=ClockSpeeds
 Comment=Monitor and control your CPU
@@ -26,6 +26,6 @@ Categories=Utility;Application;
 EOF
 
 # Make the .desktop file executable
-chmod +x $HOME/.local/share/applications/ClockSpeeds.desktop
+chmod +x $HOME/.local/share/applications/org.ClockSpeeds.desktop
 
 echo "ClockSpeeds .desktop file has been created and made executable."

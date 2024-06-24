@@ -18,7 +18,7 @@
 
 import os
 import gi
-gi.require_version('Gtk', '3.0')
+gi.require_version('Gtk', '4.0')
 from gi.repository import Gtk, Gdk
 import logging
 from log_setup import get_logger
@@ -30,10 +30,6 @@ class CssManager:
         * {
             font-family: 'System-ui';
             font-size: 10pt;
-        }
-
-        box {
-            border-radius: 4px;
         }
 
         notebook tab:hover,
@@ -49,7 +45,7 @@ class CssManager:
 
         .settings-tab-label {
             font-size: 11pt;
-            padding: 5px 10px;
+            padding: 5px 7px;
         }
 
         .about-tab-label {
@@ -97,6 +93,10 @@ class CssManager:
             border-radius: 4px;
         }
 
+        checkbutton label:hover {
+            color: grey;
+        }
+
         combobox * {
             border-radius: 8px;
         }
@@ -118,8 +118,8 @@ class CssManager:
     def apply_css(self, css_data):
         # Apply the provided CSS data to the application
         self.css_provider.load_from_data(css_data.encode())
-        Gtk.StyleContext.add_provider_for_screen(
-            Gdk.Screen.get_default(),
+        Gtk.StyleContext.add_provider_for_display(
+            Gdk.Display.get_default(),
             self.css_provider,
             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
@@ -145,7 +145,7 @@ class CssManager:
         try:
             if self.is_valid_css(css_name):
                 config_manager.set_setting('CSS', 'selected_css', css_name)
-            if not self.is_valid_css(css_name):
+            else:
                 self.logger.info(f"Attempted to save invalid CSS theme: {css_name}")
         except Exception as e:
             self.logger.error(f"Error saving CSS configuration: {e}")

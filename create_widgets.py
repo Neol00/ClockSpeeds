@@ -17,19 +17,43 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import gi
-gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, Gio, Gdk
+gi.require_version('Gtk', '4.0')
+from gi.repository import Gtk
 import logging
 from log_setup import get_logger
 from shared import global_state
 
 class WidgetFactory:
-    def __init__(self, spacing=global_state.SPACING):
+    def __init__(self):
         # Initialize the logger
         self.logger = get_logger()
-        
-        # Setup the default spacing for widgets
-        self.spacing = spacing
+
+        self.scales = []  # Store references to created scales
+
+    def create_window(self, title, transient_for=None, default_width=100, default_height=100):
+        # Create a new Gtk.Window
+        try:
+            window = Gtk.Window()
+            window.set_title(title)
+            window.set_default_size(default_width, default_height)
+            if transient_for:
+                window.set_transient_for(transient_for)
+            window.set_resizable(False)
+            return window
+        except Exception as e:
+            self.logger.error("Failed to create window: %s", e)
+            return None
+
+    def create_box(self, container, x=0, y=0, **kwargs):
+        # Create a new Gtk.Box widget with vertical orientation and add it to the container
+        try:
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            self._set_margins(box, **kwargs)
+            self._attach_widget(container, box, x, y)
+            return box
+        except Exception as e:
+            self.logger.error("Failed to create box: %s", e)
+            return None
 
     def create_grid(self):
         # Create a new Gtk.Grid widget
@@ -44,7 +68,7 @@ class WidgetFactory:
         # Create a new Gtk.Notebook widget and add it to the parent container
         try:
             notebook = Gtk.Notebook()
-            parent.pack_start(notebook, expand=True, fill=True, padding=self.spacing)
+            parent.append(notebook)
             notebook.get_style_context().add_class('notebook')
             return notebook
         except Exception as e:
@@ -59,17 +83,13 @@ class WidgetFactory:
             scrolled_window.set_min_content_width(535)
             scrolled_window.set_min_content_height(350)
 
-            tab = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-            tab.set_border_width(4)
-            scrolled_window.add(tab)
+            tab = Gtk.Box()
+            tab.set_orientation(Gtk.Orientation.VERTICAL)
+            scrolled_window.set_child(tab)
 
             tab_label = Gtk.Label(label=tab_name)
             tab_label.get_style_context().add_class('tab-label')
             notebook.append_page(scrolled_window, tab_label)
-
-            tab.show_all()
-            tab_label.show()
-            scrolled_window.show_all()
             return tab
         except Exception as e:
             self.logger.error("Failed to create tab: %s", e)
@@ -78,13 +98,11 @@ class WidgetFactory:
     def create_settings_tab(self, notebook, settings_tab_name):
         # Create a new settings tab for the Gtk.Notebook widget
         try:
-            settings_tab = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-            settings_tab.set_border_width(10)
+            settings_tab = Gtk.Box()
+            settings_tab.set_orientation(Gtk.Orientation.VERTICAL)
             settings_tab_label = Gtk.Label(label=settings_tab_name)
             settings_tab_label.get_style_context().add_class('settings-tab-label')
             notebook.append_page(settings_tab, settings_tab_label)
-            settings_tab.show_all()
-            settings_tab_label.show()
             return settings_tab
         except Exception as e:
             self.logger.error("Failed to create settings tab: %s", e)
@@ -93,13 +111,11 @@ class WidgetFactory:
     def create_about_tab(self, notebook, about_tab_name):
         # Create a new about tab for the Gtk.Notebook widget
         try:
-            about_tab = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-            about_tab.set_border_width(10)
+            about_tab = Gtk.Box()
+            about_tab.set_orientation(Gtk.Orientation.VERTICAL)
             about_tab_label = Gtk.Label(label=about_tab_name)
             about_tab_label.get_style_context().add_class('about-tab-label')
             notebook.append_page(about_tab, about_tab_label)
-            about_tab.show_all()
-            about_tab_label.show()
             return about_tab
         except Exception as e:
             self.logger.error("Failed to create about tab: %s", e)
@@ -115,7 +131,6 @@ class WidgetFactory:
                 label.set_text(text)
 
             self._set_margins(label, **kwargs)
-
             self._attach_widget(container, label, x, y)
             return label
         except Exception as e:
@@ -129,14 +144,9 @@ class WidgetFactory:
             entry.set_text(text)
             entry.set_editable(editable)
             entry.set_width_chars(width_chars)
-
-            # Override the event handlers to make the Entry non-interactable
-            entry.connect("button-press-event", lambda w, e: True)
-            entry.connect("button-release-event", lambda w, e: True)
-            entry.connect("key-press-event", lambda w, e: True)
+            entry.set_can_focus(False)  # Disable focus if not editable
 
             self._set_margins(entry, **kwargs)
-
             self._attach_widget(container, entry, x, y)
             return entry
         except Exception as e:
@@ -150,19 +160,15 @@ class WidgetFactory:
             list_store.append([0, "0%"])
 
             tree_view = Gtk.TreeView(model=list_store)
-            tree_view.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK)
 
-            # Override the event handlers to make the TreeView non-interactable
-            tree_view.connect("button-press-event", lambda w, e: True)
-            tree_view.connect("button-release-event", lambda w, e: True)
-
+            # Create and configure the progress renderer
             progress_renderer = Gtk.CellRendererProgress()
-            column = Gtk.TreeViewColumn("CPU Load", progress_renderer, value=0, text=1)
+            tree_view.get_selection().set_mode(Gtk.SelectionMode.NONE)  # Disable row selection
 
+            column = Gtk.TreeViewColumn("CPU Load", progress_renderer, value=0, text=1)
             tree_view.append_column(column)
 
             self._set_margins(tree_view, **kwargs)
-
             self._attach_widget(container, tree_view, x, y)
             return tree_view
         except Exception as e:
@@ -172,46 +178,83 @@ class WidgetFactory:
     def create_scale(self, container, command, from_value, to_value, x=0, y=0, **kwargs):
         # Create a new Gtk.Scale widget and add it to the container
         try:
-            adjustment = Gtk.Adjustment(lower=from_value, upper=to_value)
+            adjustment = Gtk.Adjustment(lower=from_value, upper=to_value, step_increment=1)
             scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=adjustment)
-            scale.set_digits(0)
+            scale.set_digits(0)  # Set scale to display only integer values
+            scale.set_round_digits(0)  # Makes the scales use discrete steps
+            overlay = Gtk.Overlay()
+            overlay.add_overlay(scale)
+            label = Gtk.Label(label=str(int(scale.get_value())))
+
+            def on_scale_value_changed(scale):
+                label.set_text(str(int(scale.get_value())))
+                self._update_scale_label_position(scale, label)
+
             if command:
                 scale.connect("value-changed", command)
+            scale.connect("value-changed", lambda s: on_scale_value_changed(s))
+            on_scale_value_changed(scale)
+            overlay.add_overlay(label)
+            label.set_halign(Gtk.Align.START)
+            label.set_valign(Gtk.Align.CENTER)
 
-            self._set_margins(scale, **kwargs)
+            self._set_margins(overlay, **kwargs)
+            self._attach_widget(container, overlay, x, y)
 
-            self._attach_widget(container, scale, x, y)
+            # Store references to the scale and label for later updates
+            self.scales.append((scale, label))
+
             return scale
         except Exception as e:
-            self.logger.error("Failed to create scale: %s", e)
+            self.logger.error(f"Failed to create scale: {e}")
             return None
+
+    def update_all_scale_labels(self):
+        # Update the position of all scale labels
+        for scale, label in self.scales:
+            self._update_scale_label_position(scale, label)
+
+    def _update_scale_label_position(self, scale, label):
+        adjustment = scale.get_adjustment()
+        scale_width = scale.get_allocated_width()
+        handle_position = (scale.get_value() - adjustment.get_lower()) / (adjustment.get_upper() - adjustment.get_lower())
+        handle_x = scale_width * handle_position
+
+        label_width = label.get_allocated_width()
+        label_x = handle_x - (label_width / 2)
+        label_x = max(min(label_x, scale_width - label_width), 0)
+        label.set_margin_start(int(label_x))
+        label.set_margin_top(65)
 
     def create_button(self, container, text, command=None, press_event=None, release_event=None, x=0, y=0, **kwargs):
         # Create a new Gtk.Button widget and add it to the container
         try:
-            button = Gtk.Button(label=text)
+            button = Gtk.Button()
+            # Use a label widget for the text inside the button
+            label = Gtk.Label(label=text)
+            button.set_child(label)
             if command:
                 button.connect("clicked", command)
             button.get_style_context().add_class('button')
 
             self._set_margins(button, **kwargs)
-
             self._attach_widget(container, button, x, y)
             return button
         except Exception as e:
             self.logger.error("Failed to create button: %s", e)
             return None
 
-    def create_info_button(self, container, callback, x=0, y=0):
+    def create_info_button(self, container, callback, x=0, y=0, **kwargs):
         # Create a new info button (Gtk.Button) with an information icon and add it to the container
         try:
             button = Gtk.Button()
             button.connect("clicked", callback)
-            info_icon = Gio.ThemedIcon(name="dialog-information")
-            info_image = Gtk.Image.new_from_gicon(info_icon, Gtk.IconSize.BUTTON)
-            button.add(info_image)
-            button.set_relief(Gtk.ReliefStyle.NONE)
 
+            # Create an image with the icon name
+            info_icon = Gtk.Image.new_from_icon_name("dialog-information")
+            button.set_child(info_icon)
+
+            self._set_margins(button, **kwargs)
             self._attach_widget(container, button, x, y)
             return button
         except Exception as e:
@@ -222,12 +265,14 @@ class WidgetFactory:
         # Create a new Gtk.SpinButton widget and add it to the container
         try:
             adjustment = Gtk.Adjustment(value=value, lower=lower, upper=upper, step_increment=step_increment, page_increment=page_increment)
-            spinbutton = Gtk.SpinButton(adjustment=adjustment, climb_rate=climb_rate, digits=digits)
+            spinbutton = Gtk.SpinButton()
+            spinbutton.set_adjustment(adjustment)
+            spinbutton.set_climb_rate(climb_rate)
+            spinbutton.set_digits(digits)
             if command:
                 spinbutton.connect("value-changed", command)
 
             self._set_margins(spinbutton, **kwargs)
-
             self._attach_widget(container, spinbutton, x, y)
             return spinbutton
         except Exception as e:
@@ -235,7 +280,6 @@ class WidgetFactory:
             return None
 
     def create_combobox(self, container, values, command, style=None, x=0, y=0, **kwargs):
-        # Create a new Gtk.ComboBox widget and add it to the container
         try:
             store = Gtk.ListStore(str)
             for val in values:
@@ -245,9 +289,14 @@ class WidgetFactory:
             combobox.pack_start(renderer_text, True)
             combobox.add_attribute(renderer_text, "text", 0)
             combobox.connect("changed", command)
-            
+
+            # Apply hexpand and vexpand if provided in kwargs
+            if 'hexpand' in kwargs:
+                combobox.set_hexpand(kwargs['hexpand'])
+            if 'vexpand' in kwargs:
+                combobox.set_vexpand(kwargs['vexpand'])
+
             self._set_margins(combobox, **kwargs)
-                    
             self._attach_widget(container, combobox, x, y)
             return combobox
         except Exception as e:
@@ -257,12 +306,13 @@ class WidgetFactory:
     def create_checkbutton(self, container, text, variable, command=None, style=None, x=0, y=0, **kwargs):
         # Create a new Gtk.CheckButton widget and add it to the container
         try:
-            checkbutton = Gtk.CheckButton(label=text)
+            checkbutton = Gtk.CheckButton()
+            label = Gtk.Label(label=text)
+            checkbutton.set_child(label)
             if command is not None:
                 checkbutton.connect("toggled", command)
 
             self._set_margins(checkbutton, **kwargs)
-
             self._attach_widget(container, checkbutton, x, y)
             return checkbutton
         except Exception as e:
@@ -278,15 +328,17 @@ class WidgetFactory:
 
             if isinstance(container, Gtk.Dialog):
                 content_area = container.get_content_area()
-                content_area.pack_start(widget, expand=True, fill=True, padding=self.spacing)
+                content_area.append(widget)
             elif isinstance(container, Gtk.Grid):
                 next_row = len(container.get_children()) // container.get_column_homogeneous()
                 next_col = len(container.get_children()) % container.get_column_homogeneous()
                 container.attach(widget, next_col, next_row, 1, 1)
             elif isinstance(container, Gtk.Box):
-                container.pack_start(widget, expand=True, fill=True, padding=self.spacing)
+                container.append(widget)
             elif isinstance(container, Gtk.Fixed):
                 container.put(widget, x, y)
+            elif isinstance(container, (Gtk.ApplicationWindow, Gtk.Popover, Gtk.Window)):
+                container.set_child(widget)
             else:
                 self.logger.error(f"Container of type {type(container).__name__} does not support pack_start or attach")
                 raise TypeError(f"Unsupported container type {type(container).__name__}")

@@ -25,9 +25,6 @@ class GlobalState:
         # Initialize the logger
         self.logger = get_logger()
 
-        # Spacing used in the GUI
-        self.SPACING = 5
-
         # Minimum and maximum scale values for CPU frequency adjustment
         self.SCALE_MIN = int(config_manager.get_setting('Settings', 'clock_scale_minimum', 1))
         self.SCALE_MAX = int(config_manager.get_setting('Settings', 'clock_scale_maximum', 6000))

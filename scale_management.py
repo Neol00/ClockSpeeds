@@ -20,6 +20,7 @@ import logging
 from log_setup import get_logger
 from config_setup import config_manager
 from shared import global_state, gui_components
+from create_widgets import widget_factory
 from cpu_file_search import cpu_file_search
 from cpu_management import cpu_manager
 
@@ -226,20 +227,23 @@ class ScaleManager:
 
     def on_disable_scale_limits_change(self, checkbutton):
         # Handle changes to the disable scale limits setting
-        global_state.disable_scale_limits = self.disable_scale_limits_checkbutton.get_active()  # Update the global state based on the checkbutton's status
+        global_state.disable_scale_limits = self.disable_scale_limits_checkbutton.get_active()
         try:
             # Iterate over all threads to update their scale ranges
             for thread_num in self.min_scales.keys():
                 min_scale, max_scale = self.get_scale_pair(thread_num)
                 if min_scale and max_scale:
                     self.set_scale_range(min_scale=min_scale, max_scale=max_scale, thread_num=thread_num)
-            
+
             # Update the TDP scale range if it exists
             if self.tdp_scale:
                 self.set_scale_range(tdp_scale=self.tdp_scale, thread_num=thread_num)
-            
+
             # Save the new setting to the configuration
             config_manager.set_setting('Settings', 'disable_scale_limits', str(global_state.disable_scale_limits))
+
+            # Update all scale labels positions
+            widget_factory.update_all_scale_labels()
         except Exception as e:
             self.logger.error(f"Error changing scale limits: {e}")
 

@@ -17,8 +17,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import gi
-gi.require_version('Gtk', '3.0')
-gi.require_version('Gio', '2.0')
+gi.require_version('Gtk', '4.0')
 from gi.repository import Gtk
 import logging
 from log_setup import get_logger
@@ -34,13 +33,8 @@ class SettingsWindow:
         # Initialize the logger
         self.logger = get_logger()
 
-        # Create the settings window
-        self.settings_window = Gtk.Window(title="Settings")
-        self.settings_window.set_default_size(200, 200)
-        self.settings_window.set_resizable(False)
-        self.settings_window.connect("delete-event", self.close_settings_window)
-
         # Call methods on startup
+        self.setup_main_settings_window()
         self.setup_main_settings_box()
         self.create_settings_notebook()
         self.create_settings_tabs()
@@ -48,11 +42,33 @@ class SettingsWindow:
         self.add_settings_widgets_to_gui_components()
         self.update_enhanced_control_checkbutton()
 
+    def setup_main_settings_window(self):
+        # Create the settings window
+        try:
+            self.settings_window = widget_factory.create_window("Settings", None, 200, 200)
+            self.settings_window.connect("close-request", self.close_settings_window)
+        except Exception as e:
+            self.logger.error(f"Error setting up main settings window: {e}")
+
+    def open_settings_window(self, widget=None, data=None):
+        # Open the settings window
+        try:
+            self.settings_window.present()
+        except Exception as e:
+            self.logger.error(f"Error opening settings window: {e}")
+
+    def close_settings_window(self, *args):
+        # Close the settings window
+        try:
+            self.settings_window.hide()
+            return True
+        except Exception as e:
+            self.logger.error(f"Error closing settings window: {e}")
+
     def setup_main_settings_box(self):
         # Setup the main settings box
         try:
-            self.main_settings_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=global_state.SPACING)
-            self.settings_window.add(self.main_settings_box)
+            self.main_settings_box = widget_factory.create_box(self.settings_window)
         except Exception as e:
             self.logger.error(f"Error setting up main settings box: {e}")
 
@@ -74,68 +90,49 @@ class SettingsWindow:
     def setup_settings_gui(self):
         # Setup the settings GUI components
         try:
-            self.general_fixed = Gtk.Fixed()
-            self.general_tab.add(self.general_fixed)
+            general_fixed = Gtk.Fixed()
+            self.general_tab.append(general_fixed)
 
             # Create the disable scale limits checkbutton
             self.disable_scale_limits_checkbutton = widget_factory.create_checkbutton(
-                self.general_fixed, "Disable Scale Limits", global_state.disable_scale_limits, scale_manager.on_disable_scale_limits_change, x=5, y=10)
+                general_fixed, "Disable Scale Limits", global_state.disable_scale_limits, scale_manager.on_disable_scale_limits_change, x=5, y=10)
 
             # Create the info button for the disable scale limits checkbutton
             info_button_scale = widget_factory.create_info_button(
-                self.general_fixed, self.show_scale_info_dialog, x=150, y=10)
+                general_fixed, self.show_scale_info_window, x=155, y=5, margin_bottom=5)
             
             # Create the sync scales checkbutton
             self.sync_scales_checkbutton = widget_factory.create_checkbutton(
-                self.general_fixed, "Sync All Scales", global_state.sync_scales, scale_manager.on_sync_scales_change, x=5, y=40)
+                general_fixed, "Sync All Scales", global_state.sync_scales, scale_manager.on_sync_scales_change, x=5, y=40)
 
             # Create the info button for the sync scales checkbutton
             info_button_sync = widget_factory.create_info_button(
-                self.general_fixed, self.show_sync_info_dialog, x=150, y=40)
+                general_fixed, self.show_sync_info_window, x=155, y=35, margin_top=5)
 
             # Create the enhanced control checkbutton
             is_installed = ryzen_smu_installer.is_ryzen_smu_installed()
             self.enhanced_control_checkbutton = widget_factory.create_checkbutton(
-                self.general_fixed, "Enhanced Ryzen Control", is_installed, self.show_enhanced_control_warning_dialog, x=5, y=70)
+                general_fixed, "Enhanced Ryzen Control", is_installed, self.show_enhanced_control_warning_window, x=5, y=70)
             self.enhanced_control_checkbutton.set_sensitive(not is_installed)
 
             # Create the update interval label and spinbutton
             interval_label = widget_factory.create_label(
-                self.general_fixed, "Update Interval Seconds:", x=20, y=100)
-
+                general_fixed, "Update Interval Seconds:", x=20, y=100)
             interval_spinbutton = widget_factory.create_spinbutton(
-                self.general_fixed, cpu_manager.update_interval, 0.1, 20.0, 0.1, 1, 0.1, 1, self.on_interval_changed, x=45, y=125)
+                general_fixed, cpu_manager.update_interval, 0.1, 20.0, 0.1, 1, 0.1, 1, self.on_interval_changed, x=45, y=125, margin_bottom=10)
 
             # Create the CSS combobox
             css_values = css_manager.get_installed_gtk_css()
-            self.css_combobox = widget_factory.create_combobox(
-                self.css_tab, css_values, self.on_css_change, x=0, y=0)
+            css_combobox = widget_factory.create_combobox(
+                self.css_tab, css_values, self.on_css_change, x=0, y=0, margin_start=10, margin_end=10, margin_top=20, margin_bottom=20, hexpand=True, vexpand=True)
 
             # Set the active CSS theme
             saved_css = css_manager.load_css_config()
             if saved_css in css_values:
                 active_index = css_values.index(saved_css)
-                self.css_combobox.set_active(active_index)
+                css_combobox.set_active(active_index)
         except Exception as e:
             self.logger.error(f"Error setting up settings window GUI: {e}")
-
-    def open_settings_window(self, widget=None, data=None):
-        # Open the settings window
-        try:
-            if not self.settings_window.get_visible():
-                self.settings_window.show_all()
-            else:
-                self.settings_window.present()
-        except Exception as e:
-            self.logger.error(f"Error opening settings window: {e}")
-
-    def close_settings_window(self, *args):
-        # Close the settings window
-        try:
-            self.settings_window.hide()
-            return True
-        except Exception as e:
-            self.logger.error(f"Error closing settings window: {e}")
 
     def add_settings_widgets_to_gui_components(self):
         # Add the settings widgets to the GUI components dictionary
@@ -148,39 +145,54 @@ class SettingsWindow:
         except Exception as e:
             self.logger.error(f"Error adding settings widget to gui_components: {e}")
 
-    def show_scale_info_dialog(self, widget):
+    def show_scale_info_window(self, widget):
         # Show the information dialog for the disable scale limits checkbutton
         try:
-            dialog = Gtk.MessageDialog(
-                transient_for=self.settings_window,
-                flags=0,
-                message_type=Gtk.MessageType.INFO,
-                buttons=Gtk.ButtonsType.OK,
-                text="Disable Scale Limits",
-            )
-            dialog.format_secondary_text(
-                "Enabling this option allows setting CPU speeds beyond standard limits. Note: values outside your CPU's allowed range may not work as expected."
-            )
-            dialog.run()
-            dialog.destroy()
+            scale_info_window = widget_factory.create_window("Information", self.settings_window, 300, 100)
+
+            scale_info_box = widget_factory.create_box(scale_info_window)
+
+            scale_info_label = widget_factory.create_label(
+                scale_info_box,
+                "Enabling this option allows setting CPU speeds beyond standard limits.\n\n"
+                "Note: values outside your CPU's allowed range may not work as expected.",
+                margin_start=10, margin_end=10, margin_top=10)
+
+            def on_destroy(widget):
+                scale_info_window.close()
+
+            scale_info_button = widget_factory.create_button(
+                scale_info_box, "OK", margin_start=100, margin_end=100, margin_bottom=10)
+            scale_info_button.connect("clicked", on_destroy)
+
+            scale_info_window.connect("close-request", on_destroy)
+
+            scale_info_window.present()
         except Exception as e:
             self.logger.error(f"Error showing scale info dialog: {e}")
 
-    def show_sync_info_dialog(self, widget):
+    def show_sync_info_window(self, widget):
         # Show the information dialog for the sync scales checkbutton
         try:
-            dialog = Gtk.MessageDialog(
-                transient_for=self.settings_window,
-                flags=0,
-                message_type=Gtk.MessageType.INFO,
-                buttons=Gtk.ButtonsType.OK,
-                text="Sync All Scales",
-            )
-            dialog.format_secondary_text(
-                "Enabling this option will synchronize the CPU scales across all threads."
-            )
-            dialog.run()
-            dialog.destroy()
+            sync_info_window = widget_factory.create_window("Information", self.settings_window, 300, 50)
+
+            sync_info_box = widget_factory.create_box(sync_info_window)
+
+            sync_info_label = widget_factory.create_label(
+                sync_info_box,
+                "Enabling this option will synchronize the CPU scales across all threads.",
+                margin_start=10, margin_end=10, margin_top=10)
+
+            def on_destroy(widget):
+                sync_info_window.close()
+
+            sync_info_button = widget_factory.create_button(
+                sync_info_box, "OK", margin_start=100, margin_end=100, margin_bottom=10)
+            sync_info_button.connect("clicked", on_destroy)
+
+            sync_info_window.connect("close-request", on_destroy)
+
+            sync_info_window.present()
         except Exception as e:
             self.logger.error(f"Error showing sync info dialog: {e}")
 
@@ -205,38 +217,43 @@ class SettingsWindow:
         except Exception as e:
             self.logger.error(f"Error changing css: {e}")
 
-    def show_enhanced_control_warning_dialog(self, widget):
+    def show_enhanced_control_warning_window(self, widget):
         # Show the warning dialog for enabling enhanced Ryzen control
         try:
-            dialog = Gtk.MessageDialog(
-                transient_for=self.settings_window,
-                flags=0,
-                message_type=Gtk.MessageType.WARNING,
-                buttons=Gtk.ButtonsType.YES_NO,
-                text="Enable Enhanced Ryzen Control",
-            )
-            dialog.format_secondary_text(
-                "This option requires the installation of ryzen_smu. "
-                "It will also require installing other dependencies. "
-                "This program does not provide a way to uninstall ryzen_smu. "
+            warning_window = widget_factory.create_window("Enable Enhanced Ryzen Control", self.settings_window, 350, 150)
+
+            warning_box = widget_factory.create_box(warning_window)
+
+            label = widget_factory.create_label(
+                warning_box,
+                "This option requires the installation of ryzen_smu.\n\n"
+                "It will also require installing other dependencies. This program does not provide a way to uninstall ryzen_smu. "
                 "You can also install ryzen_smu manually to enable this feature. "
-                "Are you sure that you want to continue?"
+                "Are you sure that you want to continue?",
+                margin_start=10, margin_end=10, margin_top=10
             )
 
-            # Run the dialog and capture the response
-            response = dialog.run()
-            dialog.destroy()
-
-            if response == Gtk.ResponseType.YES:
-                # If the user confirms, enable enhanced control
+            def on_yes_clicked(button):
                 self.logger.info("User confirmed to enable enhanced Ryzen control.")
                 self.enable_enhanced_control()
-            else:
-                # If the user cancels, reset the checkbutton state
+                warning_window.close()
+
+            def on_no_clicked(button):
                 self.logger.info("User canceled enabling enhanced Ryzen control.")
-                widget.handler_block_by_func(self.show_enhanced_control_warning_dialog)
+                widget.handler_block_by_func(self.show_enhanced_control_warning_window)
                 widget.set_active(False)
-                widget.handler_unblock_by_func(self.show_enhanced_control_warning_dialog)
+                widget.handler_unblock_by_func(self.show_enhanced_control_warning_window)
+                warning_window.close()
+
+            yes_button = widget_factory.create_button(warning_box, "Yes", margin_start=10, margin_bottom=10)
+            yes_button.connect("clicked", on_yes_clicked)
+
+            no_button = widget_factory.create_button(warning_box, "No", margin_start=10, margin_bottom=10)
+            no_button.connect("clicked", on_no_clicked)
+
+            warning_window.connect("close-request", lambda w: on_no_clicked(None))
+
+            warning_window.present()
         except Exception as e:
             self.logger.error(f"Error showing enhanced control warning dialog: {e}")
 
@@ -278,10 +295,10 @@ class SettingsWindow:
     def update_enhanced_control_checkbutton(self):
         # Update the status of the enhanced control checkbutton
         is_installed = ryzen_smu_installer.is_ryzen_smu_installed()
-        self.enhanced_control_checkbutton.handler_block_by_func(self.show_enhanced_control_warning_dialog)
+        self.enhanced_control_checkbutton.handler_block_by_func(self.show_enhanced_control_warning_window)
         self.enhanced_control_checkbutton.set_active(is_installed)
         self.enhanced_control_checkbutton.set_sensitive(not is_installed)
-        self.enhanced_control_checkbutton.handler_unblock_by_func(self.show_enhanced_control_warning_dialog)
+        self.enhanced_control_checkbutton.handler_unblock_by_func(self.show_enhanced_control_warning_window)
 
 # Create an instance of the SettingsWindow
 settings_window = SettingsWindow()

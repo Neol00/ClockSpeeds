@@ -59,14 +59,14 @@ that can be changed by changing the content of the config.ini file or inside the
 What things you need to run the application and how to install them:
 
 * python
-* gtk3
+* gtk4
 * gobject-introspection
 * python-gobject
 
 Arch Linux:
 
 ```sh
-sudo pacman -S python gtk3 gobject-introspection python-gobject
+sudo pacman -S python gtk4 gobject-introspection python-gobject
 ```
 
 ## License

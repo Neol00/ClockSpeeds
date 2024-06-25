@@ -67,6 +67,7 @@ class ClockSpeedsApp(Gtk.Application):
                 self.update_scales()
                 self.set_tdp_widgets()
                 self.set_pbo_widgets()
+                settings_window.init_display_ghz_setting()
         except Exception as e:
             self.logger.error(f"Error setting up main window: {e}")
 
@@ -131,7 +132,7 @@ class ClockSpeedsApp(Gtk.Application):
         # Create the "more" button to show additional options
         try:
             self.more_button = widget_factory.create_button(
-                self.main_box, "", self.show_more_options, margin_start=10, margin_end=10, margin_top=5, margin_bottom=5)
+                self.main_box, None, self.show_more_options, margin_start=10, margin_end=10, margin_top=5, margin_bottom=5)
             self.more_button.set_icon_name("open-menu-symbolic")
         except Exception as e:
             self.logger.error(f"Error creating more ... button: {e}")
@@ -390,16 +391,16 @@ class ClockSpeedsApp(Gtk.Application):
                 cpu_min_max_checkbutton.set_tooltip_text("Toggle whether minimum and maximum frequency should be applied")
 
                 cpu_max_scale = widget_factory.create_scale(
-                    control_fixed, scale_manager.update_min_max_labels, global_state.SCALE_MIN, global_state.SCALE_MAX, x=100, y=y_offset + 10)
+                    control_fixed, scale_manager.update_min_max_labels, global_state.SCALE_MIN, global_state.SCALE_MAX, x=100, y=y_offset + 10, Frequency=True)
                 cpu_max_scale.set_name(f'cpu_max_scale_{i}')
-                cpu_max_scale.set_tooltip_text("Maximum frequency set in MHz")
+                cpu_max_scale.set_tooltip_text("Maximum frequency")
                 cpu_max_desc = widget_factory.create_label(
                     control_fixed, f"Maximum", x=440, y=y_offset + 10)
 
                 cpu_min_scale = widget_factory.create_scale(
-                    control_fixed, scale_manager.update_min_max_labels, global_state.SCALE_MIN, global_state.SCALE_MAX, x=100, y=y_offset + 50)
+                    control_fixed, scale_manager.update_min_max_labels, global_state.SCALE_MIN, global_state.SCALE_MAX, x=100, y=y_offset + 50, Frequency=True)
                 cpu_min_scale.set_name(f'cpu_min_scale_{i}')
-                cpu_min_scale.set_tooltip_text("Minimum frequency set in MHz")
+                cpu_min_scale.set_tooltip_text("Minimum frequency")
                 cpu_min_desc = widget_factory.create_label(
                     control_fixed, f"Minimum", x=440, y=y_offset + 50)
 

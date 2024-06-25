@@ -137,7 +137,7 @@ class WidgetFactory:
             self.logger.error("Failed to create label: %s", e)
             return None
 
-    def create_entry(self, container, text="N/A MHz", editable=False, width_chars=10, x=0, y=0, **kwargs):
+    def create_entry(self, container, text="N/A", editable=False, width_chars=10, x=0, y=0, **kwargs):
         # Create a new Gtk.Entry widget and add it to the container
         try:
             entry = Gtk.Entry()
@@ -175,25 +175,32 @@ class WidgetFactory:
             self.logger.error("Failed to create CellRendererProgress: %s", e)
             return None
 
-    def create_scale(self, container, command, from_value, to_value, x=0, y=0, Negative=False, **kwargs):
+    def create_scale(self, container, command, from_value, to_value, x=0, y=0, Negative=False, Frequency=False, **kwargs):
         # Create a new Gtk.Scale widget and add it to the container
         try:
             adjustment = Gtk.Adjustment(lower=from_value, upper=to_value, step_increment=1)
             scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=adjustment)
-            scale.set_digits(0)  # Set scale to display only integer values
-            scale.set_round_digits(0)  # Makes the scales use discrete steps
+            scale.set_digits(2 if Frequency and global_state.display_ghz else 0)  # Set scale digits based on display_ghz if Frequency is True
+            scale.set_round_digits(2 if Frequency and global_state.display_ghz else 0)
             overlay = Gtk.Overlay()
             overlay.add_overlay(scale)
-            label = Gtk.Label(label=str(int(scale.get_value())))
+            label = Gtk.Label()
+
+            def update_label(scale, label):
+                value = scale.get_value()
+                if Frequency and global_state.display_ghz:
+                    display_value = value / 1000.0
+                    label.set_text(f"{display_value:.2f} GHz")
+                else:
+                    if Negative:
+                        display_value = -value
+                    else:
+                        display_value = value
+                    label.set_text(f"{display_value:.0f} MHz" if Frequency else str(int(display_value)))
+                self._update_scale_label_position(scale, label)
 
             def on_scale_value_changed(scale):
-                if Negative:
-                    # Convert the value to negative
-                    value = -scale.get_value()
-                else:
-                    value = scale.get_value()
-                label.set_text(str(int(value)))
-                self._update_scale_label_position(scale, label)
+                update_label(scale, label)
 
             if command:
                 scale.connect("value-changed", command)
@@ -207,7 +214,7 @@ class WidgetFactory:
             self._attach_widget(container, overlay, x, y)
 
             # Store references to the scale and label for later updates
-            self.scales.append((scale, label))
+            self.scales.append((scale, label, Frequency))
 
             return scale
         except Exception as e:
@@ -220,16 +227,35 @@ class WidgetFactory:
             self._update_scale_label_position(scale, label)
 
     def _update_scale_label_position(self, scale, label):
-        adjustment = scale.get_adjustment()
-        scale_width = scale.get_allocated_width()
-        handle_position = (scale.get_value() - adjustment.get_lower()) / (adjustment.get_upper() - adjustment.get_lower())
-        handle_x = scale_width * handle_position
+        try:
+            adjustment = scale.get_adjustment()
+            scale_width = scale.get_allocated_width()
+            handle_position = (scale.get_value() - adjustment.get_lower()) / (adjustment.get_upper() - adjustment.get_lower())
+            handle_x = scale_width * handle_position
 
-        label_width = label.get_allocated_width()
-        label_x = handle_x - (label_width / 2)
-        label_x = max(min(label_x, scale_width - label_width), 0)
-        label.set_margin_start(int(label_x))
-        label.set_margin_top(65)
+            label_width = label.get_allocated_width()
+            label_x = handle_x - (label_width / 2)
+            label_x = max(min(label_x, scale_width - label_width), 0)
+            label.set_margin_start(int(label_x))
+            label.set_margin_top(65)
+        except Exception as e:
+            self.logger.error(f"Failed to calculate scales position: {e}")
+
+    def update_frequency_scale_labels(self):
+        # Update the labels for all frequency scales
+        for scale, label, is_frequency in self.scales:
+            if is_frequency:  # Only update if it is a frequency scale
+                try:
+                    adjustment = scale.get_adjustment()
+                    value = adjustment.get_value()
+                    if global_state.display_ghz:
+                        display_value = value / 1000.0
+                        label.set_text(f"{display_value:.2f} GHz")
+                    else:
+                        label.set_text(f"{value:.0f} MHz")
+                    self._update_scale_label_position(scale, label)
+                except Exception as e:
+                    self.logger.error(f"Error updating label for scale: {e}")
 
     def create_button(self, container, text, command=None, press_event=None, release_event=None, x=0, y=0, **kwargs):
         # Create a new Gtk.Button widget and add it to the container

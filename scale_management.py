@@ -78,11 +78,14 @@ class ScaleManager:
     def get_scale_pair(self, thread_num):
         # Get the min and max scale widgets for a given thread number
         try:
-            min_scale = self.min_scales[thread_num]
-            max_scale = self.max_scales[thread_num]
+            min_scale = self.min_scales.get(thread_num)
+            max_scale = self.max_scales.get(thread_num)
+            if min_scale is None or max_scale is None:
+                self.logger.warning(f"Scale widget for thread {thread_num} not found.")
+                return None, None
             return min_scale, max_scale
-        except KeyError:
-            self.logger.error(f"Scale widget for thread {thread_num} not found.")
+        except Exception as e:
+            self.logger.error(f"Error getting scale pair for thread {thread_num}: {e}")
             return None, None
 
     def extract_thread_num(self, scale_name):
@@ -232,7 +235,7 @@ class ScaleManager:
             # Iterate over all threads to update their scale ranges
             for thread_num in self.min_scales.keys():
                 min_scale, max_scale = self.get_scale_pair(thread_num)
-                if min_scale and max_scale:
+                if min_scale is not None and max_scale is not None:
                     self.set_scale_range(min_scale=min_scale, max_scale=max_scale, thread_num=thread_num)
 
             # Update the TDP scale range if it exists
@@ -244,6 +247,8 @@ class ScaleManager:
 
             # Update all scale labels positions
             widget_factory.update_all_scale_labels()
+        except ValueError as ve:
+            pass
         except Exception as e:
             self.logger.error(f"Error changing scale limits: {e}")
 

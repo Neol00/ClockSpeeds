@@ -73,7 +73,7 @@ class LogSetup:
             os.makedirs(log_dir, exist_ok=True)
 
             # Retrieve the logging level from configuration
-            config_log_level = config_manager.get_setting('Settings', 'LoggingLevel', default='WARNING').upper()
+            config_log_level = config_manager.get_setting('Settings', 'logging_level', default='WARNING').upper()
             log_level = {'ERROR': logging.ERROR, 'INFO': logging.INFO, 'WARNING': logging.WARNING}.get(config_log_level, logging.ERROR)
             logger = logging.getLogger()
             logger.setLevel(log_level)

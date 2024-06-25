@@ -21,6 +21,7 @@ gi.require_version('Gtk', '4.0')
 from gi.repository import Gtk
 import logging
 from log_setup import get_logger
+from config_setup import config_manager
 from shared import global_state, gui_components
 from create_widgets import widget_factory
 from cpu_management import cpu_manager
@@ -109,17 +110,21 @@ class SettingsWindow:
             info_button_sync = widget_factory.create_info_button(
                 general_fixed, self.show_sync_info_window, x=155, y=35, margin_top=5)
 
+            # Create the MHz to GHz toggle checkbutton
+            self.mhz_to_ghz_checkbutton = widget_factory.create_checkbutton(
+                general_fixed, "Display GHz Instead Of MHz", global_state.display_ghz, self.on_mhz_to_ghz_toggle, x=5, y=70)
+
             # Create the enhanced control checkbutton
             is_installed = ryzen_smu_installer.is_ryzen_smu_installed()
             self.enhanced_control_checkbutton = widget_factory.create_checkbutton(
-                general_fixed, "Enhanced Ryzen Control", is_installed, self.show_enhanced_control_warning_window, x=5, y=70)
+                general_fixed, "Enhanced Ryzen Control", is_installed, self.show_enhanced_control_warning_window, x=5, y=100)
             self.enhanced_control_checkbutton.set_sensitive(not is_installed)
 
             # Create the update interval label and spinbutton
             interval_label = widget_factory.create_label(
-                general_fixed, "Update Interval Seconds:", x=20, y=100)
+                general_fixed, "Update Interval Seconds:", x=20, y=130)
             interval_spinbutton = widget_factory.create_spinbutton(
-                general_fixed, cpu_manager.update_interval, 0.1, 20.0, 0.1, 1, 0.1, 1, self.on_interval_changed, x=45, y=125, margin_bottom=10)
+                general_fixed, cpu_manager.update_interval, 0.1, 20.0, 0.1, 1, 0.1, 1, self.on_interval_changed, x=45, y=155, margin_bottom=10)
 
             # Create the CSS combobox
             css_values = css_manager.get_installed_gtk_css()
@@ -180,7 +185,8 @@ class SettingsWindow:
 
             sync_info_label = widget_factory.create_label(
                 sync_info_box,
-                "Enabling this option will synchronize the CPU scales across all threads.",
+                "Enabling this option will synchronize the minimum and maximum CPU\n\n"
+                "frequency scales across all threads.",
                 margin_start=10, margin_end=10, margin_top=10)
 
             def on_destroy(widget):
@@ -196,10 +202,23 @@ class SettingsWindow:
         except Exception as e:
             self.logger.error(f"Error showing sync info dialog: {e}")
 
+    def on_mhz_to_ghz_toggle(self, checkbutton):
+        global_state.display_ghz = checkbutton.get_active()
+        cpu_manager.update_clock_speeds()
+        widget_factory.update_frequency_scale_labels()
+        config_manager.set_setting('Settings', 'display_ghz', str(global_state.display_ghz))
+
+    def init_display_ghz_setting(self):
+        display_ghz_setting = config_manager.get_setting('Settings', 'display_ghz', 'False')
+        global_state.display_ghz = display_ghz_setting == 'True'
+        widget_factory.update_frequency_scale_labels()
+        self.mhz_to_ghz_checkbutton.set_active(global_state.display_ghz)
+
     def on_interval_changed(self, spinbutton):
         # Update the interval value when the spinbutton value changes
         new_interval = round(spinbutton.get_value(), 1)
         cpu_manager.set_update_interval(new_interval)
+        widget_factory.update_all_scale_labels()
 
     def on_css_change(self, combo):
         # Handle the change of CSS theme from the combobox

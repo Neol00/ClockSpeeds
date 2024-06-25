@@ -81,7 +81,7 @@ class WidgetFactory:
             scrolled_window = Gtk.ScrolledWindow()
             scrolled_window.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
             scrolled_window.set_min_content_width(535)
-            scrolled_window.set_min_content_height(350)
+            scrolled_window.set_min_content_height(400)
 
             tab = Gtk.Box()
             tab.set_orientation(Gtk.Orientation.VERTICAL)

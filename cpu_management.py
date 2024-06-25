@@ -25,6 +25,7 @@ from config_setup import config_manager
 from privileged_actions import privileged_actions
 from shared import global_state, gui_components
 from cpu_file_search import cpu_file_search
+from ryzen_smu_installer import ryzen_smu_installer
 
 class CPUManager:
     def __init__(self):
@@ -58,6 +59,7 @@ class CPUManager:
         self.governor_combobox = None
         self.boost_checkbutton = None
         self.tdp_scale = None
+        self.pbo_curve_scale = None
 
         # Set of valid CPU governors
         self.valid_governors = frozenset([
@@ -146,6 +148,7 @@ class CPUManager:
             self.governor_combobox = gui_components['governor_combobox']
             self.boost_checkbutton = gui_components['boost_checkbutton']
             self.tdp_scale = gui_components['tdp_scale']
+            self.pbo_curve_scale = gui_components['pbo_curve_scale']
         except KeyError as e:
             self.logger.error(f"Error setting up CPU manager's GUI components: Component {e} not found")
 
@@ -261,6 +264,29 @@ class CPUManager:
         except Exception as e:
             self.logger.error(f"Error getting CPU frequencies: {e}")
             return None, None
+
+    def get_allowed_tdp_values(self):
+        # First, check the CPU type
+        cpu_type = cpu_file_search.cpu_type
+
+        # If CPU type is "Other", do not proceed with TDP check and log no error
+        if cpu_type == "Other":
+            return None
+
+        # Get the allowed TDP values for Intel CPUs
+        max_tdp_file = cpu_file_search.intel_tdp_files['max_tdp']
+        if not max_tdp_file or not os.path.exists(max_tdp_file):
+            self.logger.error("Intel Max TDP file not found.")
+            return None
+
+        try:
+            with open(max_tdp_file, 'r') as f:
+                max_tdp_value_uw = int(f.read().strip())
+                max_tdp_value_w = max_tdp_value_uw / 1_000_000  # Convert from microwatts to watts
+                return max_tdp_value_w
+        except ValueError as e:
+            self.logger.error(f"Error reading TDP values: {e}")
+            return None
 
     def read_cpu_speeds(self):
         # Read the current CPU speeds from the appropriate system files
@@ -815,6 +841,10 @@ class CPUManager:
             if not validate_cpu_type():
                 return False
 
+            if not ryzen_smu_installer.is_ryzen_smu_installed():
+                self.logger.error("ryzen_smu is not installed.")
+                return False
+
             command, tdp_value_milliwatts = create_tdp_command()
             privileged_actions.run_pkexec_command(command, success_callback=success_callback, failure_callback=failure_callback)
             return True
@@ -823,28 +853,56 @@ class CPUManager:
             self.logger.error(f"Error setting Ryzen TDP: {e}")
             return False
 
-    def get_allowed_tdp_values(self):
-        # First, check the CPU type
-        cpu_type = cpu_file_search.cpu_type
-
-        # If CPU type is "Other", do not proceed with TDP check and log no error
-        if cpu_type == "Other":
-            return None
-
-        # Get the allowed TDP values for Intel CPUs
-        max_tdp_file = cpu_file_search.intel_tdp_files['max_tdp']
-        if not max_tdp_file or not os.path.exists(max_tdp_file):
-            self.logger.error("Intel Max TDP file not found.")
-            return None
-
+    def set_pbo_curve_offset(self, widget=None):
         try:
-            with open(max_tdp_file, 'r') as f:
-                max_tdp_value_uw = int(f.read().strip())
-                max_tdp_value_w = max_tdp_value_uw / 1_000_000  # Convert from microwatts to watts
-                return max_tdp_value_w
-        except ValueError as e:
-            self.logger.error(f"Error reading TDP values: {e}")
-            return None
+            def validate_cpu_type():
+                # Validate the CPU type
+                if cpu_file_search.cpu_type != "Other":
+                    self.logger.error("PBO curve setting is only supported for AMD Ryzen CPUs.")
+                    return False
+                return True
+
+            def create_pbo_command(offset_value):
+                # Create the command to set the PBO curve offset value for all cores
+                commands = []
+                physical_cores = self.parse_cpu_info(cpu_file_search.proc_files['cpuinfo'])[2]
+
+                # Convert offset_value to a 16-bit two's complement representation
+                if offset_value < 0:
+                    offset_value = (1 << 16) + offset_value
+
+                for core_id in range(physical_cores):
+                    # Calculate smu_args_value for each core
+                    smu_args_value = ((core_id & 8) << 5 | core_id & 7) << 20 | (offset_value & 0xFFFF)
+                    commands.append(f"echo {smu_args_value} | sudo tee /sys/kernel/ryzen_smu_drv/smu_args > /dev/null")
+                    commands.append(f"echo '0x35' | sudo tee /sys/kernel/ryzen_smu_drv/mp1_smu_cmd > /dev/null")
+                return " && ".join(commands)
+
+            def success_callback():
+                self.logger.info(f"Successfully set PBO curve offset using scale value.")
+
+            def failure_callback(error_message):
+                # Handle failures from pkexec command
+                if error_message == 'canceled':
+                    self.logger.info("User canceled the PBO curve setting pkexec prompt.")
+                else:
+                    self.logger.error(f"Failed to set PBO curve offset: {error_message}")
+
+            if not validate_cpu_type():
+                return False
+
+            if not ryzen_smu_installer.is_ryzen_smu_installed():
+                self.logger.error("ryzen_smu is not installed.")
+                return False
+
+            offset_value = int(self.pbo_curve_scale.get_value())
+            command = create_pbo_command(offset_value)
+            privileged_actions.run_pkexec_command(command, success_callback=success_callback, failure_callback=failure_callback)
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error setting PBO curve offset: {e}")
+            return False
 
 # Create an instance of CPUManager
 cpu_manager = CPUManager()

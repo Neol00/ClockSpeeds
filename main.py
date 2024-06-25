@@ -51,9 +51,8 @@ class ClockSpeedsApp(Gtk.Application):
             if not hasattr(self, 'window'):
                 self.window = Gtk.ApplicationWindow(application=self)
                 self.window.set_title("ClockSpeeds")
-                self.window.set_default_size(535, 350)
+                self.window.set_default_size(535, 400)
                 self.window.set_resizable(False)
-                self.window.set_default_icon_name(self.icon_path)
                 self.window.connect("close-request", self.close_main_window)
                 self.window.present()
 
@@ -67,6 +66,7 @@ class ClockSpeedsApp(Gtk.Application):
                 self.update_cpu_widgets()
                 self.update_scales()
                 self.set_tdp_widgets()
+                self.set_pbo_widgets()
         except Exception as e:
             self.logger.error(f"Error setting up main window: {e}")
 
@@ -161,7 +161,6 @@ class ClockSpeedsApp(Gtk.Application):
             # Get CPU information from the CPU manager
             cpu_info = cpu_manager.get_cpu_info()
             if not cpu_info:
-                # Log a warning if CPU info retrieval fails
                 self.logger.warning("Failed to retrieve CPU info.")
                 return
 
@@ -221,7 +220,7 @@ class ClockSpeedsApp(Gtk.Application):
             # Display allowed CPU frequencies if available
             if min_frequencies and max_frequencies:
                 widget_factory.create_label(
-                    system_fixed, markup="<b>Allowed CPU Frequencies</b>", x=10, y=y_offset)
+                    system_fixed, markup="<b>Allowed CPU Frequencies</b>", x=88, y=y_offset)
                 y_offset += 30
 
                 # Group threads by their min and max frequencies
@@ -419,12 +418,21 @@ class ClockSpeedsApp(Gtk.Application):
                 control_fixed, "Enable CPU Boost Clock", global_state.boost_enabled, cpu_manager.toggle_boost, x=265, y=y_offset + 130)
 
             self.tdp_label = widget_factory.create_label(
-                control_fixed, "TDP:", x=50, y=y_offset + 170)
+                control_fixed, "TDP:", x=60, y=y_offset + 160)
             self.tdp_scale = widget_factory.create_scale(
                 control_fixed, None, global_state.TDP_SCALE_MIN, global_state.TDP_SCALE_MAX, x=100, y=y_offset + 160)
             self.tdp_scale.set_tooltip_text("Adjust the TDP in Watts")
             self.apply_tdp_button = widget_factory.create_button(
                 control_fixed, "Apply TDP", cpu_manager.set_intel_tdp, x=210, y=y_offset + 205, margin_bottom=10)
+
+            # Add PBO Curve Offset Scale
+            self.pbo_curve_label = widget_factory.create_label(
+                control_fixed, "PBO Offset:", x=23, y=y_offset + 235)
+            self.pbo_curve_scale = widget_factory.create_scale(
+                control_fixed, None, -30, 0, x=100, y=y_offset + 235)
+            self.pbo_curve_scale.set_tooltip_text("Adjust the PBO Curve Offset")
+            self.apply_pbo_button = widget_factory.create_button(
+                control_fixed, "Apply PBO Offset", cpu_manager.set_pbo_curve_offset, x=190, y=y_offset + 280, margin_bottom=10)
 
             self.logger.info("Control widgets created.")
         except Exception as e:
@@ -454,6 +462,7 @@ class ClockSpeedsApp(Gtk.Application):
             gui_components['governor_combobox'] = self.governor_combobox
             gui_components['boost_checkbutton'] = self.boost_checkbutton
             gui_components['tdp_scale'] = self.tdp_scale
+            gui_components['pbo_curve_scale'] = self.pbo_curve_scale
             self.logger.info("Widgets added to gui_components.")
         except Exception as e:
             self.logger.error(f"Error adding widget to gui_components: {e}")
@@ -509,6 +518,20 @@ class ClockSpeedsApp(Gtk.Application):
                 self.apply_tdp_button.set_visible(False)
         except Exception as e:
             self.logger.error(f"Error setting TDP widgets visibility: {e}")
+
+    def set_pbo_widgets(self):
+        # Sets the visibility of the TDP widgets based on tdp_installed
+        try:
+            if cpu_file_search.cpu_type == "Other" and ryzen_smu_installer.is_ryzen_smu_installed():
+                self.pbo_curve_label.set_visible(True)
+                self.pbo_curve_scale.set_visible(True)
+                self.apply_pbo_button.set_visible(True)
+            else:
+                self.pbo_curve_label.set_visible(False)
+                self.pbo_curve_scale.set_visible(False)
+                self.apply_pbo_button.set_visible(False)
+        except Exception as e:
+            self.logger.error(f"Error setting PBO widgets visibility: {e}")
 
 def main():
     # Main function to start the application

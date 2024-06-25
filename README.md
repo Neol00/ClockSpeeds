@@ -19,7 +19,8 @@ This project is in early development so some things might not work as expected.
 * Adjust CPU the minimum and maximum frequencies,
 * Select governor,
 * Toggle boost,
-* Change TDP
+* Change TDP,
+* Set PBO offset curve (for AMD Ryzen CPU's only)
 
 <img src="images/ClockSpeeds-Preview1.png" alt="Sample Image" width="470" height="400">
 
@@ -62,12 +63,16 @@ What things you need to run the application and how to install them:
 * gtk4
 * gobject-introspection
 * python-gobject
+* ryzen_smu (for AMD Ryzen CPU's full functionality only)
 
 Arch Linux:
 
 ```sh
 sudo pacman -S python gtk4 gobject-introspection python-gobject
 ```
+
+If you are using a AMD Ryzen CPU i recommend that you download and install ryzen_smu manually from:
+https://github.com/leogx9r/ryzen_smu
 
 ## License
 

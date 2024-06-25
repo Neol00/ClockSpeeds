@@ -33,6 +33,10 @@ class GlobalState:
         self.TDP_SCALE_MIN = int(config_manager.get_setting('Settings', 'tdp_scale_minimum', 1))
         self.TDP_SCALE_MAX = int(config_manager.get_setting('Settings', 'tdp_scale_maximum', 400))
 
+        # Minimum and maximum scale values for PBO offset adjustment
+        self.PBO_SCALE_MIN = int(config_manager.get_setting('Settings', 'pbo_scale_minimum', 0))
+        self.PBO_SCALE_MAX = int(config_manager.get_setting('Settings', 'pbo_scale_maximum', 30))
+
         # Set to hold unique CPU governors
         self.unique_governors = set()
 
@@ -60,6 +64,10 @@ class GlobalState:
                 config_manager.set_setting('Settings', 'tdp_scale_minimum', str(self.TDP_SCALE_MIN))
             if not config_manager.get_setting('Settings', 'tdp_scale_maximum'):
                 config_manager.set_setting('Settings', 'tdp_scale_maximum', str(self.TDP_SCALE_MAX))
+            if not config_manager.get_setting('Settings', 'pbo_scale_minimum'):
+                config_manager.set_setting('Settings', 'pbo_scale_minimum', str(self.PBO_SCALE_MIN))
+            if not config_manager.get_setting('Settings', 'pbo_scale_maximum'):
+                config_manager.set_setting('Settings', 'pbo_scale_maximum', str(self.PBO_SCALE_MAX))
             if not config_manager.get_setting('Settings', 'logging_level'):
                 config_manager.set_setting('Settings', 'logging_level', 'WARNING')
 

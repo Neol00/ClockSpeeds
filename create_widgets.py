@@ -175,7 +175,7 @@ class WidgetFactory:
             self.logger.error("Failed to create CellRendererProgress: %s", e)
             return None
 
-    def create_scale(self, container, command, from_value, to_value, x=0, y=0, **kwargs):
+    def create_scale(self, container, command, from_value, to_value, x=0, y=0, Negative=False, **kwargs):
         # Create a new Gtk.Scale widget and add it to the container
         try:
             adjustment = Gtk.Adjustment(lower=from_value, upper=to_value, step_increment=1)
@@ -187,7 +187,12 @@ class WidgetFactory:
             label = Gtk.Label(label=str(int(scale.get_value())))
 
             def on_scale_value_changed(scale):
-                label.set_text(str(int(scale.get_value())))
+                if Negative:
+                    # Convert the value to negative
+                    value = -scale.get_value()
+                else:
+                    value = scale.get_value()
+                label.set_text(str(int(value)))
                 self._update_scale_label_position(scale, label)
 
             if command:

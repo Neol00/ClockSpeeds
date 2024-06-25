@@ -517,6 +517,47 @@ class CPUManager:
         # Set the active index to 0, which is the "Select Governor" placeholder
         self.governor_combobox.set_active(0)
 
+    def find_boost_type(self):
+        # Determine which boost files are correct for your CPU type
+        if cpu_file_search.cpu_type == "Intel" and cpu_file_search.intel_boost_path and os.path.exists(cpu_file_search.intel_boost_path):
+            return self.read_boost_file(cpu_file_search.intel_boost_path, intel=True)
+        else:
+            for boost_file in cpu_file_search.cpu_files['boost_files'].values():
+                if os.path.exists(boost_file):
+                    return self.read_boost_file(boost_file)
+            self.logger.info("No valid boost control files found.")
+            self.boost_checkbutton.hide()
+            return None
+
+    def read_boost_file(self, file_path, intel=False):
+        # Read the boost file to determine the current boost status
+        try:
+            with open(file_path, 'r') as file:
+                content = file.read().strip()
+                if content in ['0', '1']:
+                    return content == ('0' if intel else '1')
+                else:
+                    self.logger.error(f"Unexpected content in boost file at {file_path}: {content}")
+                    return False
+        except IOError as e:
+            self.logger.info(f"Boost file not accessible at {file_path}: {e}")
+            return False
+
+    def update_boost_checkbutton(self):
+        # Update the boost checkbutton status in the GUI
+        try:
+            current_status = self.find_boost_type()
+            if current_status is None:
+                self.boost_checkbutton.set_visible(False)
+            else:
+                self.boost_checkbutton.set_visible(True)
+                if self.boost_checkbutton.get_active() != current_status:
+                    self.boost_checkbutton.handler_block_by_func(self.toggle_boost)
+                    self.boost_checkbutton.set_active(current_status)
+                    self.boost_checkbutton.handler_unblock_by_func(self.toggle_boost)
+        except Exception as e:
+            self.logger.error(f"Error updating boost checkbutton status: {e}")
+
     def apply_cpu_clock_speed_limits(self, widget=None):
         # Apply the minimum and maximum CPU clock speed limits to each CPU thread
         try:
@@ -719,47 +760,6 @@ class CPUManager:
             self.logger.error(f"Error toggling CPU boost: {e}")
             self.schedule_control_tasks()
             self.update_boost_checkbutton()
-
-    def find_boost_type(self):
-        # Determine which boost files are correct for your CPU type
-        if cpu_file_search.cpu_type == "Intel" and cpu_file_search.intel_boost_path and os.path.exists(cpu_file_search.intel_boost_path):
-            return self.read_boost_file(cpu_file_search.intel_boost_path, intel=True)
-        else:
-            for boost_file in cpu_file_search.cpu_files['boost_files'].values():
-                if os.path.exists(boost_file):
-                    return self.read_boost_file(boost_file)
-            self.logger.info("No valid boost control files found.")
-            self.boost_checkbutton.hide()
-            return None
-
-    def read_boost_file(self, file_path, intel=False):
-        # Read the boost file to determine the current boost status
-        try:
-            with open(file_path, 'r') as file:
-                content = file.read().strip()
-                if content in ['0', '1']:
-                    return content == ('0' if intel else '1')
-                else:
-                    self.logger.error(f"Unexpected content in boost file at {file_path}: {content}")
-                    return False
-        except IOError as e:
-            self.logger.info(f"Boost file not accessible at {file_path}: {e}")
-            return False
-
-    def update_boost_checkbutton(self):
-        # Update the boost checkbutton status in the GUI
-        try:
-            current_status = self.find_boost_type()
-            if current_status is None:
-                self.boost_checkbutton.set_visible(False)
-            else:
-                self.boost_checkbutton.set_visible(True)
-                if self.boost_checkbutton.get_active() != current_status:
-                    self.boost_checkbutton.handler_block_by_func(self.toggle_boost)
-                    self.boost_checkbutton.set_active(current_status)
-                    self.boost_checkbutton.handler_unblock_by_func(self.toggle_boost)
-        except Exception as e:
-            self.logger.error(f"Error updating boost checkbutton status: {e}")
 
     def set_intel_tdp(self, widget=None):
         # Set the TDP (Thermal Design Power) for Intel CPUs

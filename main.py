@@ -387,19 +387,19 @@ class ClockSpeedsApp(Gtk.Application):
                 cpu_min_max_checkbutton = widget_factory.create_checkbutton(
                     control_fixed, f"Thread {i}", None, None, x=10, y=y_offset + 27)
                 cpu_min_max_checkbutton.set_active(True)
-                cpu_min_max_checkbutton.set_tooltip_text("Toggle Whether Min/Max Should Be Applied")
+                cpu_min_max_checkbutton.set_tooltip_text("Toggle whether minimum and maximum frequency should be applied")
 
                 cpu_max_scale = widget_factory.create_scale(
                     control_fixed, scale_manager.update_min_max_labels, global_state.SCALE_MIN, global_state.SCALE_MAX, x=100, y=y_offset + 10)
                 cpu_max_scale.set_name(f'cpu_max_scale_{i}')
-                cpu_max_scale.set_tooltip_text("Maximum Frequency Set in MHz")
+                cpu_max_scale.set_tooltip_text("Maximum frequency set in MHz")
                 cpu_max_desc = widget_factory.create_label(
                     control_fixed, f"Maximum", x=440, y=y_offset + 10)
 
                 cpu_min_scale = widget_factory.create_scale(
                     control_fixed, scale_manager.update_min_max_labels, global_state.SCALE_MIN, global_state.SCALE_MAX, x=100, y=y_offset + 50)
                 cpu_min_scale.set_name(f'cpu_min_scale_{i}')
-                cpu_min_scale.set_tooltip_text("Minimum Frequency Set in MHz")
+                cpu_min_scale.set_tooltip_text("Minimum frequency set in MHz")
                 cpu_min_desc = widget_factory.create_label(
                     control_fixed, f"Minimum", x=440, y=y_offset + 50)
 
@@ -409,7 +409,7 @@ class ClockSpeedsApp(Gtk.Application):
 
             apply_button = widget_factory.create_button(
                 control_fixed, "Apply Speed Limits", cpu_manager.apply_cpu_clock_speed_limits, x=185, y=y_offset + 95)
-            apply_button.set_tooltip_text("Apply Minimum And Maximum Speed Limits")
+            apply_button.set_tooltip_text("Apply minimum and maximum speed limits")
 
             self.governor_combobox = widget_factory.create_combobox(
                 control_fixed, global_state.unique_governors, cpu_manager.on_governor_change, x=100, y=y_offset + 128)
@@ -421,7 +421,7 @@ class ClockSpeedsApp(Gtk.Application):
                 control_fixed, "TDP:", x=60, y=y_offset + 160)
             self.tdp_scale = widget_factory.create_scale(
                 control_fixed, None, global_state.TDP_SCALE_MIN, global_state.TDP_SCALE_MAX, x=100, y=y_offset + 160)
-            self.tdp_scale.set_tooltip_text("Adjust the TDP in Watts")
+            self.tdp_scale.set_tooltip_text("Adjust the TDP in watts")
             self.apply_tdp_button = widget_factory.create_button(
                 control_fixed, "Apply TDP", cpu_manager.set_intel_tdp, x=210, y=y_offset + 205, margin_bottom=10)
 
@@ -429,8 +429,8 @@ class ClockSpeedsApp(Gtk.Application):
             self.pbo_curve_label = widget_factory.create_label(
                 control_fixed, "PBO Offset:", x=23, y=y_offset + 235)
             self.pbo_curve_scale = widget_factory.create_scale(
-                control_fixed, None, -30, 0, x=100, y=y_offset + 235)
-            self.pbo_curve_scale.set_tooltip_text("Adjust the PBO Curve Offset")
+                control_fixed, None, global_state.PBO_SCALE_MIN, global_state.PBO_SCALE_MAX, x=100, y=y_offset + 235, Negative=True)
+            self.pbo_curve_scale.set_tooltip_text("Adjust the negative PBO curve offset")
             self.apply_pbo_button = widget_factory.create_button(
                 control_fixed, "Apply PBO Offset", cpu_manager.set_pbo_curve_offset, x=190, y=y_offset + 280, margin_bottom=10)
 

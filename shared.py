@@ -47,6 +47,9 @@ class GlobalState:
         self.disable_scale_limits = False
         self.sync_scales = False
 
+        # Flag to control the MHz to GHz toggle
+        self.display_ghz = False
+
         # Maximum TDP value
         self.max_tdp_value = None
 

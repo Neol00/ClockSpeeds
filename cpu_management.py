@@ -305,7 +305,14 @@ class CPUManager:
         # Update the clock speed labels in the GUI
         for i, speed in speeds:
             if i in self.clock_labels:
-                self.clock_labels[i].set_text(f"{speed:.0f} MHz")
+                if global_state.display_ghz:
+                    display_speed = speed / 1000
+                    unit = "GHz"
+                    self.clock_labels[i].set_text(f"{display_speed:.2f} {unit}")
+                else:
+                    display_speed = speed
+                    unit = "MHz"
+                    self.clock_labels[i].set_text(f"{display_speed:.0f} {unit}")
             else:
                 self.logger.error(f"No label found for thread {i}")
 
@@ -313,7 +320,14 @@ class CPUManager:
         # Update the average clock speed label in the GUI
         if speeds:
             average_speed = sum(speed for _, speed in speeds) / len(speeds)
-            self.average_clock_entry.set_text(f"{average_speed:.0f} MHz")
+            if global_state.display_ghz:
+                display_speed = average_speed / 1000
+                unit = "GHz"
+                self.average_clock_entry.set_text(f"{display_speed:.2f} {unit}")
+            else:
+                display_speed = average_speed
+                unit = "MHz"
+                self.average_clock_entry.set_text(f"{display_speed:.0f} {unit}")
         else:
             self.logger.error("No valid CPU clock speeds found")
 

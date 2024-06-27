@@ -693,7 +693,7 @@ class CPUManager:
         except Exception as e:
             self.logger.error(f"Error showing speed limits info dialog: {e}")
 
-    def set_cpu_governor(self, governor):
+    def set_cpu_governor(self, governor, success_callback=None, failure_callback=None):
         # Set the CPU governor for all CPU threads
         try:
             def get_command_list():
@@ -705,18 +705,12 @@ class CPUManager:
                         command_list.append(f'echo "{governor}" | sudo tee {governor_file} > /dev/null')
                 return command_list
 
-            def failure_callback(error_message):
-                # Handle failures from pkexec command
-                self.logger.error(error_message)
-
             command_list = get_command_list()
             if command_list:
                 # If there are commands to execute, run them with pkexec
                 full_command = ' && '.join(command_list)
-                success, error_message = privileged_actions.run_pkexec_command(full_command, failure_callback=failure_callback)
-                if success:
-                    return True
-                return False
+                privileged_actions.run_pkexec_command(full_command, success_callback=success_callback, failure_callback=failure_callback)
+                return True
             else:
                 self.logger.error("No CPU governor files found to apply clock speed limits.")
                 return False
@@ -736,22 +730,18 @@ class CPUManager:
 
                 if selected_governor in self.valid_governors:
                     self.logger.info(f"Setting CPU governor to: {selected_governor}")
-                    
+
                     def success_callback():
                         self.logger.info(f"Successfully set governor to {selected_governor}")
-                    
+
                     def failure_callback(error):
                         if error == 'canceled':
                             self.logger.info("User canceled the governor change pkexec prompt.")
+                            GLib.idle_add(lambda: combobox.set_active(0))
                         else:
                             self.logger.error(f"Failed to set CPU governor: {error}")
-                        GLib.idle_add(lambda: combobox.set_active(0))
-                    
-                    privileged_actions.run_pkexec_command(
-                        command=f'cpupower frequency-set -g {selected_governor}',
-                        success_callback=success_callback,
-                        failure_callback=failure_callback
-                    )
+
+                    self.set_cpu_governor(selected_governor, success_callback=success_callback, failure_callback=failure_callback)
                 else:
                     self.logger.error(f"Invalid CPU governor selected: {selected_governor}")
                     GLib.idle_add(lambda: combobox.set_active(0))

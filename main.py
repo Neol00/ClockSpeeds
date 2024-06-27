@@ -16,13 +16,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-import sys
 import os
-import tempfile
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Gio', '2.0')
-from gi.repository import Gtk, Gio, GdkPixbuf
+from gi.repository import Gtk, Gio
 import logging
 from log_setup import get_logger
 from shared import global_state, gui_components
@@ -409,7 +407,7 @@ class ClockSpeedsApp(Gtk.Application):
                 self.cpu_max_scales[i] = cpu_max_scale
 
             apply_button = widget_factory.create_button(
-                control_fixed, "Apply Speed Limits", cpu_manager.apply_cpu_clock_speed_limits, x=185, y=y_offset + 95)
+                control_fixed, "Apply Speed Limits", cpu_manager.apply_cpu_clock_speed_limits, x=194, y=y_offset + 95)
             apply_button.set_tooltip_text("Apply minimum and maximum speed limits")
 
             self.governor_combobox = widget_factory.create_combobox(
@@ -424,7 +422,7 @@ class ClockSpeedsApp(Gtk.Application):
                 control_fixed, None, global_state.TDP_SCALE_MIN, global_state.TDP_SCALE_MAX, x=100, y=y_offset + 160)
             self.tdp_scale.set_tooltip_text("Adjust the TDP in watts")
             self.apply_tdp_button = widget_factory.create_button(
-                control_fixed, "Apply TDP", cpu_manager.set_intel_tdp, x=210, y=y_offset + 205, margin_bottom=10)
+                control_fixed, "Apply TDP", cpu_manager.set_intel_tdp, x=220, y=y_offset + 205, margin_bottom=10)
 
             # Add PBO Curve Offset Scale
             self.pbo_curve_label = widget_factory.create_label(
@@ -538,7 +536,7 @@ def main():
     # Main function to start the application
     try:
         app = ClockSpeedsApp()
-        app.run(sys.argv)
+        app.run()
     except Exception as e:
         logger = get_logger()
         logger.error(f"Error launching the main application: {e}")

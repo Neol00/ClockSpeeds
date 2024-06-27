@@ -103,7 +103,7 @@ class CssManager:
 
         progressbar trough {
             min-height: 15px;
-            min-width: 70px;
+            min-width: 80px;
             border-radius: 4px;
         }
 

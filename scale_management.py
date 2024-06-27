@@ -246,9 +246,9 @@ class ScaleManager:
             config_manager.set_setting('Settings', 'disable_scale_limits', str(global_state.disable_scale_limits))
 
             # Update all scale labels positions
-            widget_factory.update_all_scale_labels()
+            widget_factory.update_frequency_scale_labels()
         except ValueError as ve:
-            pass
+            self.logger.error(f"ValueError changing scale limits: {ve}")
         except Exception as e:
             self.logger.error(f"Error changing scale limits: {e}")
 

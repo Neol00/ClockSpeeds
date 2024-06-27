@@ -121,7 +121,7 @@ class WidgetFactory:
             self.logger.error("Failed to create about tab: %s", e)
             return None
 
-    def create_label(self, container, text=None, markup=None, style=None, x=0, y=0, **kwargs):
+    def create_label(self, container, text=None, markup=None, x=0, y=0, **kwargs):
         # Create a new Gtk.Label widget and add it to the container
         try:
             label = Gtk.Label()
@@ -154,11 +154,12 @@ class WidgetFactory:
             return None
 
     def create_progressbar(self, container, x=0, y=0, **kwargs):
+        # Create a new Gtk.ProgressBar widget and add it to the container
         try:
             # Create a label for "CPU Load"
             cpu_load_label = Gtk.Label(label="CPU Load")
             self._set_margins(cpu_load_label, **kwargs)
-            self._attach_widget(container, cpu_load_label, x, y + 6)
+            self._attach_widget(container, cpu_load_label, x + 8, y + 6)
 
             # Create an Overlay to hold the progress bar and the label
             overlay = Gtk.Overlay()
@@ -264,7 +265,7 @@ class WidgetFactory:
                 except Exception as e:
                     self.logger.error(f"Error updating label for scale: {e}")
 
-    def create_button(self, container, text, command=None, press_event=None, release_event=None, x=0, y=0, **kwargs):
+    def create_button(self, container, text, command=None, x=0, y=0, **kwargs):
         # Create a new Gtk.Button widget and add it to the container
         try:
             button = Gtk.Button()
@@ -317,7 +318,7 @@ class WidgetFactory:
             self.logger.error("Failed to create SpinButton: %s", e)
             return None
 
-    def create_combobox(self, container, values, command, style=None, x=0, y=0, **kwargs):
+    def create_combobox(self, container, values, command, x=0, y=0, **kwargs):
         try:
             store = Gtk.ListStore(str)
             for val in values:
@@ -341,7 +342,7 @@ class WidgetFactory:
             self.logger.error("Failed to create combobox: %s", e)
             return None
 
-    def create_checkbutton(self, container, text, variable, command=None, style=None, x=0, y=0, **kwargs):
+    def create_checkbutton(self, container, text, variable, command=None, x=0, y=0, **kwargs):
         # Create a new Gtk.CheckButton widget and add it to the container
         try:
             checkbutton = Gtk.CheckButton()

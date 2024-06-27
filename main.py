@@ -29,7 +29,6 @@ from cpu_management import cpu_manager
 from settings_window_setup import settings_window
 from cpu_file_search import cpu_file_search
 from scale_management import scale_manager
-from ryzen_smu_installer import ryzen_smu_installer
 
 class ClockSpeedsApp(Gtk.Application):
     def __init__(self, *args, **kwargs):
@@ -499,7 +498,7 @@ class ClockSpeedsApp(Gtk.Application):
             self.tdp_installed = False
             if cpu_file_search.cpu_type == "Intel":
                 self.tdp_installed = True
-            elif cpu_file_search.cpu_type == "Other" and ryzen_smu_installer.is_ryzen_smu_installed():
+            elif cpu_file_search.cpu_type == "Other" and global_state.is_ryzen_smu_installed():
                 self.tdp_installed = True
         except Exception as e:
             self.logger.error(f"Error checking if TDP can be set: {e}")
@@ -521,7 +520,7 @@ class ClockSpeedsApp(Gtk.Application):
     def set_pbo_widgets(self):
         # Sets the visibility of the TDP widgets based on tdp_installed
         try:
-            if cpu_file_search.cpu_type == "Other" and ryzen_smu_installer.is_ryzen_smu_installed():
+            if cpu_file_search.cpu_type == "Other" and global_state.is_ryzen_smu_installed():
                 self.pbo_curve_label.set_visible(True)
                 self.pbo_curve_scale.set_visible(True)
                 self.apply_pbo_button.set_visible(True)

@@ -16,6 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+import subprocess
 import logging
 from log_setup import get_logger
 from config_setup import config_manager
@@ -52,6 +53,11 @@ class GlobalState:
 
         # Maximum TDP value
         self.max_tdp_value = None
+
+    def is_ryzen_smu_installed(self):
+        # Check if the ryzen_smu module is installed using DKMS
+        result = subprocess.run(["dkms", "status", "ryzen_smu"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return "installed" in result.stdout.decode()
 
         # Call method on startup
         self.save_settings()

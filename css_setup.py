@@ -88,6 +88,12 @@ class CssManager:
             border-radius: 4px;
         }
 
+        .infobutton {
+            min-height: 20px;
+            min-width: 20px;
+            padding: 2px 2px;
+            border-radius: 4px;
+        }
         checkbutton {
             padding: 2px;
             border-radius: 4px;

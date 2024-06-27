@@ -269,11 +269,11 @@ class WidgetFactory:
         # Create a new Gtk.Button widget and add it to the container
         try:
             button = Gtk.Button()
+            if command:
+                button.connect("clicked", command)
             # Use a label widget for the text inside the button
             label = Gtk.Label(label=text)
             button.set_child(label)
-            if command:
-                button.connect("clicked", command)
             button.get_style_context().add_class('button')
 
             self._set_margins(button, **kwargs)
@@ -292,6 +292,7 @@ class WidgetFactory:
             # Create an image with the icon name
             info_icon = Gtk.Image.new_from_icon_name("dialog-information")
             button.set_child(info_icon)
+            button.get_style_context().add_class('infobutton')
 
             self._set_margins(button, **kwargs)
             self._attach_widget(container, button, x, y)

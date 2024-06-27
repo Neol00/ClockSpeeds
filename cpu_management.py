@@ -24,8 +24,8 @@ from log_setup import get_logger
 from config_setup import config_manager
 from privileged_actions import privileged_actions
 from shared import global_state, gui_components
+from create_widgets import widget_factory
 from cpu_file_search import cpu_file_search
-from ryzen_smu_installer import ryzen_smu_installer
 
 class CPUManager:
     def __init__(self):
@@ -632,12 +632,15 @@ class CPUManager:
                 else:
                     self.logger.error(f"Failed to apply CPU clock speed limits: {error_message}")
 
+            any_active_checkbutton = False
+
             for i in range(cpu_file_search.thread_count):
                 min_scale, max_scale, checkbutton = retrieve_widgets_for_thread(i)
                 if min_scale is None or max_scale is None or checkbutton is None:
                     continue  # Skip to the next thread if widgets are not found
 
                 if checkbutton.get_active():
+                    any_active_checkbutton = True
                     min_speed, max_speed = validate_and_get_speeds(min_scale, max_scale, i)
                     if min_speed is None or max_speed is None:
                         continue  # Skip to the next thread if speeds are invalid
@@ -657,10 +660,38 @@ class CPUManager:
                 full_command = ' && '.join(command_list)
                 privileged_actions.run_pkexec_command(full_command, success_callback=success_callback, failure_callback=failure_callback)
             else:
-                self.logger.error("No commands generated to apply clock speed limits.")
+                if not any_active_checkbutton:
+                    self.show_speed_limits_info_window("You need at least one thread enabled to apply the speed limits.")
+                else:
+                    self.logger.info("No valid commands generated to apply clock speed limits.")
 
         except Exception as e:
             self.logger.error(f"Error applying CPU clock speed limits: {e}")
+
+    def show_speed_limits_info_window(self, message):
+        # Show the information dialog for the speed limits info
+        try:
+            speed_limits_info_window = widget_factory.create_window("Information", None, 300, 50)
+
+            speed_limits_info_box = widget_factory.create_box(speed_limits_info_window)
+
+            speed_limits_info_label = widget_factory.create_label(
+                speed_limits_info_box,
+                message,
+                margin_start=10, margin_end=10, margin_top=10)
+
+            def on_destroy(widget):
+                speed_limits_info_window.close()
+
+            speed_limits_info_button = widget_factory.create_button(
+                speed_limits_info_box, "OK", margin_start=131, margin_end=131, margin_bottom=10)
+            speed_limits_info_button.connect("clicked", on_destroy)
+
+            speed_limits_info_window.connect("close-request", on_destroy)
+
+            speed_limits_info_window.present()
+        except Exception as e:
+            self.logger.error(f"Error showing speed limits info dialog: {e}")
 
     def set_cpu_governor(self, governor):
         # Set the CPU governor for all CPU threads
@@ -861,7 +892,7 @@ class CPUManager:
             if not validate_cpu_type():
                 return False
 
-            if not ryzen_smu_installer.is_ryzen_smu_installed():
+            if not global_state.is_ryzen_smu_installed():
                 self.logger.error("ryzen_smu is not installed.")
                 return False
 
@@ -914,7 +945,7 @@ class CPUManager:
             if not validate_cpu_type():
                 return False
 
-            if not ryzen_smu_installer.is_ryzen_smu_installed():
+            if not global_state.is_ryzen_smu_installed():
                 self.logger.error("ryzen_smu is not installed.")
                 return False
 

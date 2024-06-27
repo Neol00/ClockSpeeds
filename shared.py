@@ -59,9 +59,6 @@ class GlobalState:
         result = subprocess.run(["dkms", "status", "ryzen_smu"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         return "installed" in result.stdout.decode()
 
-        # Call method on startup
-        self.save_settings()
-
     def save_settings(self):
         # Save the current settings to the configuration file
         try:

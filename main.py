@@ -65,6 +65,7 @@ class ClockSpeedsApp(Gtk.Application):
                 self.set_tdp_widgets()
                 self.set_pbo_widgets()
                 settings_window.init_display_ghz_setting()
+                global_state.save_settings()
         except Exception as e:
             self.logger.error(f"Error setting up main window: {e}")
 

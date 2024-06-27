@@ -384,7 +384,7 @@ class ClockSpeedsApp(Gtk.Application):
                 y_offset = i * 100  # Adjust vertical spacing
 
                 cpu_min_max_checkbutton = widget_factory.create_checkbutton(
-                    control_fixed, f"Thread {i}", None, None, x=10, y=y_offset + 27)
+                    control_fixed, f"Thread {i}", None, self.update_check_all_state, x=10, y=y_offset + 27)
                 cpu_min_max_checkbutton.set_active(True)
                 cpu_min_max_checkbutton.set_tooltip_text("Toggle whether minimum and maximum frequency should be applied")
 
@@ -406,12 +406,17 @@ class ClockSpeedsApp(Gtk.Application):
                 self.cpu_min_scales[i] = cpu_min_scale
                 self.cpu_max_scales[i] = cpu_max_scale
 
+            # Add Check All checkbutton
+            self.check_all_checkbutton = widget_factory.create_checkbutton(
+                control_fixed, "Check All", None, self.on_check_all_toggled, x=10, y=y_offset + 98)
+            self.check_all_checkbutton.set_tooltip_text("Toggle all thread checkbuttons")
+
             apply_button = widget_factory.create_button(
                 control_fixed, "Apply Speed Limits", cpu_manager.apply_cpu_clock_speed_limits, x=194, y=y_offset + 95)
             apply_button.set_tooltip_text("Apply minimum and maximum speed limits")
 
             self.governor_combobox = widget_factory.create_combobox(
-                control_fixed, global_state.unique_governors, cpu_manager.on_governor_change, x=100, y=y_offset + 128)
+                control_fixed, global_state.unique_governors, cpu_manager.set_cpu_governor, x=100, y=y_offset + 128)
 
             self.boost_checkbutton = widget_factory.create_checkbutton(
                 control_fixed, "Enable CPU Boost Clock", global_state.boost_enabled, cpu_manager.toggle_boost, x=265, y=y_offset + 130)
@@ -433,6 +438,7 @@ class ClockSpeedsApp(Gtk.Application):
             self.apply_pbo_button = widget_factory.create_button(
                 control_fixed, "Apply PBO Offset", cpu_manager.set_pbo_curve_offset, x=190, y=y_offset + 280, margin_bottom=10)
 
+            self.update_check_all_state(None)
             self.logger.info("Control widgets created.")
         except Exception as e:
             self.logger.error(f"Error creating control widgets: {e}")
@@ -492,6 +498,31 @@ class ClockSpeedsApp(Gtk.Application):
             cpu_manager.update_boost_checkbutton()
         except Exception as e:
             self.logger.error(f"Error updating CPU widgets: {e}")
+
+    def on_check_all_toggled(self, button):
+        # Toggle all thread checkbuttons based on the state of Check All checkbutton
+        try:
+            # Set flag to indicate update is from Check All checkbutton
+            self.updating_from_check_all = True
+
+            active = button.get_active()
+            for checkbutton in self.cpu_min_max_checkbuttons.values():
+                checkbutton.set_active(active)
+
+            # Reset flag after updating
+            self.updating_from_check_all = False
+        except Exception as e:
+            self.logger.error(f"Error updating thread checkbuttons: {e}")
+
+    def update_check_all_state(self, button):
+        # Update the state of Check All checkbutton based on the individual checkbuttons
+        try:
+            all_active = all(cb.get_active() for cb in self.cpu_min_max_checkbuttons.values())
+            self.check_all_checkbutton.handler_block_by_func(self.on_check_all_toggled)
+            self.check_all_checkbutton.set_active(all_active)
+            self.check_all_checkbutton.handler_unblock_by_func(self.on_check_all_toggled)
+        except Exception as e:
+            self.logger.error(f"Error updating the Check All checkbutton: {e}")
 
     def is_tdp_installed(self):
         # Checks if the CPU's TDP can be set

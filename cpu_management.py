@@ -887,6 +887,9 @@ class CPUManager:
                 commands = []
                 physical_cores = self.parse_cpu_info(cpu_file_search.proc_files['cpuinfo'])[2]
 
+                # Convert the positive offset_value to a negative offset
+                offset_value = -offset_value
+
                 # Convert offset_value to a 16-bit two's complement representation
                 if offset_value < 0:
                     offset_value = (1 << 16) + offset_value

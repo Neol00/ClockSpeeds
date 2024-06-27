@@ -341,11 +341,11 @@ class ClockSpeedsApp(Gtk.Application):
                     monitor_fixed, f"Thread {i}:", x=x_offset + 10, y=y_offset + 15)
                 clock_label = widget_factory.create_entry(
                     monitor_fixed, "N/A MHz", False, width_chars=10, x=x_offset + 80, y=y_offset + 10)
-                progress_bar = widget_factory.create_cellrendererprogress(
+                progress_bar, percentage_label = widget_factory.create_progressbar(
                     monitor_fixed, x=x_offset + 175, y=y_offset)
 
                 self.clock_labels[i] = clock_label
-                self.progress_bars[i] = progress_bar
+                self.progress_bars[i] = (progress_bar, percentage_label)
 
             y_offset += 60
 
@@ -353,7 +353,7 @@ class ClockSpeedsApp(Gtk.Application):
                 monitor_fixed, "Average:", x=16, y=y_offset + 5)
             self.average_clock_entry = widget_factory.create_entry(
                 monitor_fixed, "N/A MHz", False, width_chars=10, x=80, y=y_offset)
-            self.average_progress_bar = widget_factory.create_cellrendererprogress(
+            self.average_progress_bar = widget_factory.create_progressbar(
                 monitor_fixed, x=175, y=y_offset - 10)
 
             package_temp_label = widget_factory.create_label(

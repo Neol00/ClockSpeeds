@@ -153,27 +153,34 @@ class WidgetFactory:
             self.logger.error("Failed to create entry: %s", e)
             return None
 
-    def create_cellrendererprogress(self, container, x=0, y=0, **kwargs):
-        # Create a new Gtk.CellRendererProgress widget and add it to the container
+    def create_progressbar(self, container, x=0, y=0, **kwargs):
         try:
-            list_store = Gtk.ListStore(int, str)
-            list_store.append([0, "0%"])
+            # Create a label for "CPU Load"
+            cpu_load_label = Gtk.Label(label="CPU Load")
+            self._set_margins(cpu_load_label, **kwargs)
+            self._attach_widget(container, cpu_load_label, x, y + 6)
 
-            tree_view = Gtk.TreeView(model=list_store)
+            # Create an Overlay to hold the progress bar and the label
+            overlay = Gtk.Overlay()
 
-            # Create and configure the progress renderer
-            progress_renderer = Gtk.CellRendererProgress()
-            tree_view.get_selection().set_mode(Gtk.SelectionMode.NONE)  # Disable row selection
+            # Create a ProgressBar
+            progress_bar = Gtk.ProgressBar()
+            self._set_margins(progress_bar, **kwargs)
+            overlay.set_child(progress_bar)
 
-            column = Gtk.TreeViewColumn("CPU Load", progress_renderer, value=0, text=1)
-            tree_view.append_column(column)
+            # Create a Label to show the percentage
+            percentage_label = Gtk.Label(label="0%")
+            percentage_label.set_halign(Gtk.Align.CENTER)
+            percentage_label.set_valign(Gtk.Align.CENTER)
+            overlay.add_overlay(percentage_label)
 
-            self._set_margins(tree_view, **kwargs)
-            self._attach_widget(container, tree_view, x, y)
-            return tree_view
+            self._set_margins(overlay, **kwargs)
+            self._attach_widget(container, overlay, x, y + 26)  # Adjust y position for proper spacing
+
+            return progress_bar, percentage_label
         except Exception as e:
-            self.logger.error("Failed to create CellRendererProgress: %s", e)
-            return None
+            self.logger.error("Failed to create ProgressBar: %s", e)
+            return None, None
 
     def create_scale(self, container, command, from_value, to_value, x=0, y=0, Negative=False, Frequency=False, **kwargs):
         # Create a new Gtk.Scale widget and add it to the container

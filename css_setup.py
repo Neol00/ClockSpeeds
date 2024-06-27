@@ -100,6 +100,17 @@ class CssManager:
         combobox * {
             border-radius: 8px;
         }
+
+        progressbar trough {
+            min-height: 15px;
+            min-width: 70px;
+            border-radius: 4px;
+        }
+
+        progressbar progress {
+            min-height: 15px;
+            border-radius: 4px;
+        }
     """
 
     def __init__(self):

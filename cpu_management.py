@@ -388,29 +388,33 @@ class CPUManager:
         return loads
 
     def update_average_load(self, loads):
-        # Calculate and update the average CPU load
-        average_load = sum(loads.values()) / len(loads)  # Calculate the average load
-        load_percentage = min(100, average_load)  # Ensure the load percentage does not exceed 100%
+        try:
+            # Calculate and update the average CPU load
+            average_load = sum(loads.values()) / len(loads)  # Calculate the average load
+            load_percentage = min(100, average_load)  # Ensure the load percentage does not exceed 100%
 
-        # Get the model from the average progress bar
-        model = self.average_progress_bar.get_model()
-        # Update the model if the load percentage has changed
-        if int(model[0][0]) != int(load_percentage):
-            model[0][0] = int(load_percentage)
-            model[0][1] = f"{int(load_percentage)}%"
+            # Update the progress bar and the label if the load percentage has changed
+            progress_bar, percentage_label = self.average_progress_bar
+            if int(progress_bar.get_fraction() * 100) != int(load_percentage):
+                progress_bar.set_fraction(load_percentage / 100.0)
+                percentage_label.set_text(f"{int(load_percentage)}%")
+        except Exception as e:
+            self.logger.error(f"Error updating average load: {e}")
 
     def update_thread_loads(self, loads):
-        # Update the load for each CPU thread
-        for cpu_id, load in loads.items():
-            if cpu_id.startswith('cpu') and cpu_id != 'cpu':  # Skip the aggregated 'cpu' line
-                thread_index = int(cpu_id.replace('cpu', ''))
-                if thread_index in self.progress_bars:
-                    # Get the model from the progress bar for the current thread
-                    thread_model = self.progress_bars[thread_index].get_model()
-                    # Update the model if the load has changed
-                    if int(thread_model[0][0]) != int(load):
-                        thread_model[0][0] = int(load)
-                        thread_model[0][1] = f"{int(load)}%"
+        try:
+            # Update the load for each CPU thread
+            for cpu_id, load in loads.items():
+                if cpu_id.startswith('cpu') and cpu_id != 'cpu':  # Skip the aggregated 'cpu' line
+                    thread_index = int(cpu_id.replace('cpu', ''))
+                    if thread_index in self.progress_bars:
+                        # Update the progress bar and the label if the load has changed
+                        progress_bar, percentage_label = self.progress_bars[thread_index]
+                        if int(progress_bar.get_fraction() * 100) != int(load):
+                            progress_bar.set_fraction(load / 100.0)
+                            percentage_label.set_text(f"{int(load)}%")
+        except Exception as e:
+            self.logger.error(f"Error updating thread loads: {e}")
 
     def update_load(self):
         # Update the CPU load for all threads
@@ -460,6 +464,8 @@ class CPUManager:
     def update_throttle(self):
         # Update the thermal throttle status in the GUI
         try:
+            self.is_throttling = False  # Reset the throttling flag initially
+
             if cpu_file_search.cpu_type == "Intel":
                 # Intel specific throttle file check
                 for i in range(cpu_file_search.thread_count):
@@ -880,9 +886,6 @@ class CPUManager:
                 # Create the command to set the PBO curve offset value for all cores
                 commands = []
                 physical_cores = self.parse_cpu_info(cpu_file_search.proc_files['cpuinfo'])[2]
-
-                # Convert the positive offset_value to a negative offset
-                offset_value = -offset_value
 
                 # Convert offset_value to a 16-bit two's complement representation
                 if offset_value < 0:

@@ -20,7 +20,7 @@ import os
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Gio', '2.0')
-from gi.repository import Gtk, Gio
+from gi.repository import Gtk, Gio, GLib
 import logging
 from log_setup import get_logger
 from shared import global_state, gui_components
@@ -380,11 +380,15 @@ class ClockSpeedsApp(Gtk.Application):
             self.cpu_min_scales = {}
             self.cpu_max_scales = {}
 
+            # Block the signal handlers to prevent multiple calls to update_check_all_state
+            self.initialization_complete = False
+            self.debounce_timeout_id = None
+
             for i in range(cpu_file_search.thread_count):
                 y_offset = i * 100  # Adjust vertical spacing
 
                 cpu_min_max_checkbutton = widget_factory.create_checkbutton(
-                    control_fixed, f"Thread {i}", None, self.update_check_all_state, x=10, y=y_offset + 27)
+                    control_fixed, f"Thread {i}", None, lambda button, i=i: self.debounced_update_check_all_state(), x=10, y=y_offset + 27)
                 cpu_min_max_checkbutton.set_active(True)
                 cpu_min_max_checkbutton.set_tooltip_text("Toggle whether minimum and maximum frequency should be applied")
 
@@ -438,6 +442,7 @@ class ClockSpeedsApp(Gtk.Application):
             self.apply_pbo_button = widget_factory.create_button(
                 control_fixed, "Apply PBO Offset", cpu_manager.set_pbo_curve_offset, x=190, y=y_offset + 280, margin_bottom=10)
 
+            self.initialization_complete = True
             self.update_check_all_state(None)
             self.logger.info("Control widgets created.")
         except Exception as e:
@@ -499,6 +504,12 @@ class ClockSpeedsApp(Gtk.Application):
         except Exception as e:
             self.logger.error(f"Error updating CPU widgets: {e}")
 
+    def debounced_update_check_all_state(self, delay=10):
+        if self.debounce_timeout_id is not None:
+            GLib.source_remove(self.debounce_timeout_id)
+        
+        self.debounce_timeout_id = GLib.timeout_add(delay, self.update_check_all_state, None)
+
     def on_check_all_toggled(self, button):
         # Toggle all thread checkbuttons based on the state of Check All checkbutton
         try:
@@ -517,12 +528,16 @@ class ClockSpeedsApp(Gtk.Application):
     def update_check_all_state(self, button):
         # Update the state of Check All checkbutton based on the individual checkbuttons
         try:
+            if not self.initialization_complete:
+                return False  # Return False to not reschedule the timeout
             all_active = all(cb.get_active() for cb in self.cpu_min_max_checkbuttons.values())
             self.check_all_checkbutton.handler_block_by_func(self.on_check_all_toggled)
             self.check_all_checkbutton.set_active(all_active)
             self.check_all_checkbutton.handler_unblock_by_func(self.on_check_all_toggled)
+            return False
         except Exception as e:
             self.logger.error(f"Error updating the Check All checkbutton: {e}")
+            return False
 
     def is_tdp_installed(self):
         # Checks if the CPU's TDP can be set

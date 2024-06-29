@@ -20,14 +20,17 @@ import os
 import importlib.util
 import shutil
 import sys
-import logging
 from subprocess import Popen, PIPE
-from log_setup import get_logger
+from config_setup import ConfigManager
+from log_setup import LogSetup
 
 class Launcher:
     def __init__(self):
         # Initialize the logger
-        self.logger = get_logger()
+        self.config_manager = ConfigManager()
+        self.log_setup = LogSetup(self.config_manager)
+        self.logger = self.log_setup.logger
+
         self.script_dir = os.path.dirname(os.path.abspath(__file__))  # Directory of this script
 
     def is_safe_environment(self):

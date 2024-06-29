@@ -19,14 +19,12 @@
 import gi
 gi.require_version('Gtk', '4.0')
 from gi.repository import Gtk
-import logging
-from log_setup import get_logger
-from shared import global_state
 
 class WidgetFactory:
-    def __init__(self):
-        # Initialize the logger
-        self.logger = get_logger()
+    def __init__(self, logger, global_state):
+        # References to instances
+        self.logger = logger
+        self.global_state = global_state
 
         self.scales = []  # Store references to created scales
 
@@ -188,20 +186,22 @@ class WidgetFactory:
         try:
             adjustment = Gtk.Adjustment(lower=from_value, upper=to_value, step_increment=1)
             scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=adjustment)
-            scale.set_digits(2 if Frequency and global_state.display_ghz else 0)  # Set scale digits based on display_ghz if Frequency is True
-            scale.set_round_digits(2 if Frequency and global_state.display_ghz else 0)
+            scale.set_digits(2 if Frequency and self.global_state.display_ghz else 0)  # Set scale digits based on display_ghz if Frequency is True
+            scale.set_round_digits(2 if Frequency and self.global_state.display_ghz else 0)
+
             overlay = Gtk.Overlay()
-            overlay.add_overlay(scale)
             label = Gtk.Label()
+            overlay.add_overlay(scale)
+            overlay.add_overlay(label)
 
             def update_label(scale, label):
                 value = scale.get_value()
-                if Frequency and global_state.display_ghz:
+                if Frequency and self.global_state.display_ghz:
                     display_value = value / 1000.0
                     label.set_text(f"{display_value:.2f} GHz")
                 else:
                     if Negative:
-                        display_value = -value
+                        display_value = -value  # Set scale digits to display a negative value
                     else:
                         display_value = value
                     label.set_text(f"{display_value:.0f} MHz" if Frequency else str(int(display_value)))
@@ -214,12 +214,14 @@ class WidgetFactory:
                 scale.connect("value-changed", command)
             scale.connect("value-changed", lambda s: on_scale_value_changed(s))
             on_scale_value_changed(scale)
-            overlay.add_overlay(label)
             label.set_halign(Gtk.Align.START)
             label.set_valign(Gtk.Align.CENTER)
 
             self._set_margins(overlay, **kwargs)
             self._attach_widget(container, overlay, x, y)
+
+            # To manage visibility of both scale and label
+            scale.connect("notify::visible", lambda scale, param: overlay.set_visible(scale.get_visible()))
 
             # Store references to the scale and label for later updates
             self.scales.append((scale, label, Frequency))
@@ -256,7 +258,7 @@ class WidgetFactory:
                 try:
                     adjustment = scale.get_adjustment()
                     value = adjustment.get_value()
-                    if global_state.display_ghz:
+                    if self.global_state.display_ghz:
                         display_value = value / 1000.0
                         label.set_text(f"{display_value:.2f} GHz")
                     else:
@@ -396,6 +398,3 @@ class WidgetFactory:
         for prop, setter in margin_properties.items():
             if prop in kwargs and kwargs[prop] is not None:
                 setter(kwargs[prop])
-
-# Create an instance of WidgetFactory
-widget_factory = WidgetFactory()

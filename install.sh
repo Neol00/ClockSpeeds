@@ -15,7 +15,7 @@ mkdir -p $HOME/.local/share/applications
 # Create the .desktop file
 cat << EOF > $HOME/.local/share/applications/org.ClockSpeeds.desktop
 [Desktop Entry]
-Version=0.11
+Version=0.12
 Type=Application
 Name=ClockSpeeds
 Comment=Monitor and control your CPU

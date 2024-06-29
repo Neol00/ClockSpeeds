@@ -83,6 +83,3 @@ class ConfigManager:
         except configparser.Error as e:
             self.logger.error(f"Error setting '{option}' in section '{section}': {e}")
             raise
-
-# Create an instance of ConfigManager
-config_manager = ConfigManager()

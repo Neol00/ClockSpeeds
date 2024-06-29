@@ -19,18 +19,18 @@
 import os
 import gi
 from gi.repository import GLib
-import logging
-from log_setup import get_logger
-from config_setup import config_manager
-from privileged_actions import privileged_actions
-from shared import global_state, gui_components
-from create_widgets import widget_factory
-from cpu_file_search import cpu_file_search
 
 class CPUManager:
-    def __init__(self):
-        # Initialize the logger
-        self.logger = get_logger()
+    def __init__(self, config_manager, logger, global_state, gui_components, widget_factory, cpu_file_search, privileged_actions, settings_applier):
+        # References to instances
+        self.config_manager = config_manager
+        self.logger = logger
+        self.global_state = global_state
+        self.gui_components = gui_components
+        self.widget_factory = widget_factory
+        self.cpu_file_search = cpu_file_search
+        self.privileged_actions = privileged_actions
+        self.settings_applier = settings_applier
 
         self.monitor_task_id = None
         self.control_task_id = None
@@ -49,7 +49,7 @@ class CPUManager:
         self.progress_bars = {}
         self.min_scales = {}
         self.max_scales = {}
-        self.cpu_min_max_checkbuttons = {}
+        self.cpu_max_min_checkbuttons = {}
 
         # GUI components
         self.average_clock_entry = None
@@ -72,7 +72,7 @@ class CPUManager:
         ])
 
         # Keep track if CPU is currently throttling
-        self.prev_package_throttle_time = [None] * cpu_file_search.thread_count
+        self.prev_package_throttle_time = [None] * self.cpu_file_search.thread_count
         self.is_throttling = False  # Flag to indicate if throttling is occurring
 
     def schedule_monitor_tasks(self):
@@ -109,6 +109,7 @@ class CPUManager:
             self.update_throttle()
         except Exception as e:
             self.logger.error("Failed to run monitor tasks: %s", e)
+
         # Only reschedule if the task ID is still valid (i.e., periodic tasks haven't been stopped)
         if self.monitor_task_id:
             self.schedule_monitor_tasks()
@@ -128,35 +129,39 @@ class CPUManager:
         # Set the update interval for periodic tasks and save it in the config
         self.update_interval = round(max(0.1, min(20.0, interval)), 1)
         self.logger.info(f"Update interval set to {self.update_interval} seconds")
-        config_manager.set_setting("Settings", "update_interval", f"{self.update_interval:.1f}")
+        self.config_manager.set_setting("Settings", "update_interval", f"{self.update_interval:.1f}")
         self.schedule_monitor_tasks()
         self.schedule_control_tasks()
 
     def setup_gui_components(self):
         # Set up references to GUI components from the shared dictionary
         try:
-            self.clock_labels = gui_components['clock_labels']
-            self.progress_bars = gui_components['progress_bars']
-            self.average_clock_entry = gui_components['average_clock_entry']
-            self.average_progress_bar = gui_components['average_progress_bar']
-            self.package_temp_entry = gui_components['package_temp_entry']
-            self.current_governor_label = gui_components['current_governor_label']
-            self.thermal_throttle_label = gui_components['thermal_throttle_label']
-            self.cpu_min_max_checkbuttons = gui_components['cpu_min_max_checkbuttons']
-            self.min_scales = gui_components['cpu_min_scales']
-            self.max_scales = gui_components['cpu_max_scales']
-            self.governor_combobox = gui_components['governor_combobox']
-            self.boost_checkbutton = gui_components['boost_checkbutton']
-            self.tdp_scale = gui_components['tdp_scale']
-            self.pbo_curve_scale = gui_components['pbo_curve_scale']
+            self.clock_labels = self.gui_components['clock_labels']
+            self.progress_bars = self.gui_components['progress_bars']
+            self.average_clock_entry = self.gui_components['average_clock_entry']
+            self.average_progress_bar = self.gui_components['average_progress_bar']
+            self.package_temp_entry = self.gui_components['package_temp_entry']
+            self.current_governor_label = self.gui_components['current_governor_label']
+            self.thermal_throttle_label = self.gui_components['thermal_throttle_label']
+            self.cpu_max_min_checkbuttons = self.gui_components['cpu_max_min_checkbuttons']
+            self.max_scales = self.gui_components['cpu_max_scales']
+            self.min_scales = self.gui_components['cpu_min_scales']
+            self.apply_max_min_button = self.gui_components['apply_max_min_button']
+            self.governor_combobox = self.gui_components['governor_combobox']
+            self.boost_checkbutton = self.gui_components['boost_checkbutton']
+            self.tdp_scale = self.gui_components['tdp_scale']
+            self.apply_tdp_button = self.gui_components['apply_tdp_button']
+            self.pbo_curve_scale = self.gui_components['pbo_curve_scale']
+            self.apply_pbo_button = self.gui_components['apply_pbo_button']
+            self.energy_perf_bias_combobox = self.gui_components['energy_perf_bias_combobox']
         except KeyError as e:
-            self.logger.error(f"Error setting up CPU manager's GUI components: Component {e} not found")
+            self.logger.error(f"Error setting up cpu_manager gui_components: Component {e} not found")
 
     def get_cpu_info(self):
         # Retrieve CPU information from system files
         try:
-            cpuinfo_file = cpu_file_search.proc_files['cpuinfo']
-            meminfo_file = cpu_file_search.proc_files['meminfo']
+            cpuinfo_file = self.cpu_file_search.proc_files['cpuinfo']
+            meminfo_file = self.cpu_file_search.proc_files['meminfo']
 
             if not cpuinfo_file:
                 self.logger.error("cpuinfo file not found.")
@@ -200,13 +205,13 @@ class CPUManager:
             model_name = None  # To store the CPU model name
             # Dictionary to store cache sizes
             cache_sizes = {
-                "L1 Data": cpu_file_search.cache_files.get("1_Data", None),
-                "L1 Instruction": cpu_file_search.cache_files.get("1_Instruction", None),
-                "L2 Unified": cpu_file_search.cache_files.get("2_Unified", None),
-                "L3 Unified": cpu_file_search.cache_files.get("3_Unified", None)
+                "L1 Data": self.cpu_file_search.cache_files.get("1_Data", None),
+                "L1 Instruction": self.cpu_file_search.cache_files.get("1_Instruction", None),
+                "L2 Unified": self.cpu_file_search.cache_files.get("2_Unified", None),
+                "L3 Unified": self.cpu_file_search.cache_files.get("3_Unified", None)
             }
             physical_cores = 0  # To store the number of physical cores
-            virtual_cores = cpu_file_search.thread_count  # Number of virtual cores (threads)
+            virtual_cores = self.cpu_file_search.thread_count  # Number of virtual cores (threads)
 
             # Open the cpuinfo file and read line by line
             with open(cpuinfo_file, 'r') as file:
@@ -243,9 +248,9 @@ class CPUManager:
             min_allowed_freqs = []
             max_allowed_freqs = []
 
-            for i in range(cpu_file_search.thread_count):
-                min_freq_file = cpu_file_search.cpu_files['cpuinfo_min_files'].get(i)
-                max_freq_file = cpu_file_search.cpu_files['cpuinfo_max_files'].get(i)
+            for i in range(self.cpu_file_search.thread_count):
+                min_freq_file = self.cpu_file_search.cpu_files['cpuinfo_min_files'].get(i)
+                max_freq_file = self.cpu_file_search.cpu_files['cpuinfo_max_files'].get(i)
 
                 if not min_freq_file or not max_freq_file:
                     self.logger.error(f"Min or max frequency file not found for thread {i}")
@@ -267,14 +272,14 @@ class CPUManager:
 
     def get_allowed_tdp_values(self):
         # First, check the CPU type
-        cpu_type = cpu_file_search.cpu_type
+        cpu_type = self.cpu_file_search.cpu_type
 
         # If CPU type is "Other", do not proceed with TDP check and log no error
         if cpu_type == "Other":
             return None
 
         # Get the allowed TDP values for Intel CPUs
-        max_tdp_file = cpu_file_search.intel_tdp_files['max_tdp']
+        max_tdp_file = self.cpu_file_search.intel_tdp_files['max_tdp']
         if not max_tdp_file or not os.path.exists(max_tdp_file):
             self.logger.error("Intel Max TDP file not found.")
             return None
@@ -291,8 +296,8 @@ class CPUManager:
     def read_cpu_speeds(self):
         # Read the current CPU speeds from the appropriate system files
         speeds = []  # List to store the CPU speeds
-        for i in range(cpu_file_search.thread_count):
-            speed_file = cpu_file_search.cpu_files['speed_files'].get(i)
+        for i in range(self.cpu_file_search.thread_count):
+            speed_file = self.cpu_file_search.cpu_files['speed_files'].get(i)
             if speed_file and os.path.exists(speed_file):
                 with open(speed_file, 'r') as file:
                     speed_str = file.read().strip()
@@ -305,7 +310,7 @@ class CPUManager:
         # Update the clock speed labels in the GUI
         for i, speed in speeds:
             if i in self.clock_labels:
-                if global_state.display_ghz:
+                if self.global_state.display_ghz:
                     display_speed = speed / 1000
                     unit = "GHz"
                     self.clock_labels[i].set_text(f"{display_speed:.2f} {unit}")
@@ -320,7 +325,7 @@ class CPUManager:
         # Update the average clock speed label in the GUI
         if speeds:
             average_speed = sum(speed for _, speed in speeds) / len(speeds)
-            if global_state.display_ghz:
+            if self.global_state.display_ghz:
                 display_speed = average_speed / 1000
                 unit = "GHz"
                 self.average_clock_entry.set_text(f"{display_speed:.2f} {unit}")
@@ -342,7 +347,7 @@ class CPUManager:
 
     def read_stat_file(self):
         # Read the CPU statistics from the stat file
-        stat_file_path = cpu_file_search.proc_files['stat']
+        stat_file_path = self.cpu_file_search.proc_files['stat']
         if not stat_file_path:
             self.logger.error("Stat file not found.")
             return None
@@ -436,9 +441,9 @@ class CPUManager:
     def read_and_parse_temperature(self):
         # Read and parse the CPU package temperature
         try:
-            if cpu_file_search.package_temp_file:
-                if os.path.exists(cpu_file_search.package_temp_file):
-                    with open(cpu_file_search.package_temp_file, 'r') as file:
+            if self.cpu_file_search.package_temp_file:
+                if os.path.exists(self.cpu_file_search.package_temp_file):
+                    with open(self.cpu_file_search.package_temp_file, 'r') as file:
                         temp_str = file.read().strip()
                         if temp_str.isdigit():
                             temp_celsius = int(temp_str) / 1000  # Convert from millidegrees to degrees Celsius
@@ -466,10 +471,10 @@ class CPUManager:
         try:
             self.is_throttling = False  # Reset the throttling flag initially
 
-            if cpu_file_search.cpu_type == "Intel":
+            if self.cpu_file_search.cpu_type == "Intel":
                 # Intel specific throttle file check
-                for i in range(cpu_file_search.thread_count):
-                    package_throttle_time_file = cpu_file_search.cpu_files.get('package_throttle_time_files', {}).get(i)
+                for i in range(self.cpu_file_search.thread_count):
+                    package_throttle_time_file = self.cpu_file_search.cpu_files.get('package_throttle_time_files', {}).get(i)
 
                     if package_throttle_time_file and os.path.exists(package_throttle_time_file):
                         with open(package_throttle_time_file, 'r') as file:
@@ -493,7 +498,7 @@ class CPUManager:
 
     def read_and_get_governor(self):
         # Read the current CPU governor from the system file
-        governor_file_path = cpu_file_search.cpu_files['governor_files'].get(0)
+        governor_file_path = self.cpu_file_search.cpu_files['governor_files'].get(0)
         if governor_file_path and os.path.exists(governor_file_path):
             with open(governor_file_path, 'r') as governor_file:
                 return governor_file.read().strip()
@@ -519,19 +524,19 @@ class CPUManager:
         model.append(["Select Governor"])
 
         # Gather all unique governors from available governor files
-        global_state.unique_governors = set()
-        for i in range(cpu_file_search.thread_count):
-            available_governors_file = cpu_file_search.cpu_files['available_governors_files'].get(i)
+        self.global_state.unique_governors = set()
+        for i in range(self.cpu_file_search.thread_count):
+            available_governors_file = self.cpu_file_search.cpu_files['available_governors_files'].get(i)
             if available_governors_file and os.path.exists(available_governors_file):
                 try:
                     with open(available_governors_file, 'r') as file:
                         governors = file.read().strip().split()
-                        global_state.unique_governors.update(governors)
+                        self.global_state.unique_governors.update(governors)
                 except Exception as e:
                     self.logger.error(f"Error reading available governors from {available_governors_file}: {e}")
 
         # Populate the combobox with the available governors, sorted alphabetically
-        for governor in sorted(global_state.unique_governors):
+        for governor in sorted(self.global_state.unique_governors):
             model.append([governor])
 
         # Set the active index to 0, which is the "Select Governor" placeholder
@@ -539,10 +544,10 @@ class CPUManager:
 
     def find_boost_type(self):
         # Determine which boost files are correct for your CPU type
-        if cpu_file_search.cpu_type == "Intel" and cpu_file_search.intel_boost_path and os.path.exists(cpu_file_search.intel_boost_path):
-            return self.read_boost_file(cpu_file_search.intel_boost_path, intel=True)
+        if self.cpu_file_search.cpu_type == "Intel" and self.cpu_file_search.intel_boost_path and os.path.exists(self.cpu_file_search.intel_boost_path):
+            return self.read_boost_file(self.cpu_file_search.intel_boost_path, intel=True)
         else:
-            for boost_file in cpu_file_search.cpu_files['boost_files'].values():
+            for boost_file in self.cpu_file_search.cpu_files['boost_files'].values():
                 if os.path.exists(boost_file):
                     return self.read_boost_file(boost_file)
             self.logger.info("No valid boost control files found.")
@@ -579,23 +584,23 @@ class CPUManager:
             self.logger.error(f"Error updating boost checkbutton status: {e}")
 
     def apply_cpu_clock_speed_limits(self, widget=None):
-        # Apply the minimum and maximum CPU clock speed limits to each CPU thread
         try:
             command_list = []  # List to store commands
 
+            def set_apply_min_max_sensitivity():
+                self.apply_max_min_button.set_sensitive(False)
+
             def retrieve_widgets_for_thread(i):
-                # Retrieve the min and max scales and checkbutton for the current thread
                 try:
                     min_scale = self.min_scales[i]
                     max_scale = self.max_scales[i]
-                    checkbutton = self.cpu_min_max_checkbuttons[i]
+                    checkbutton = self.cpu_max_min_checkbuttons[i]
                     return min_scale, max_scale, checkbutton
                 except KeyError:
                     self.logger.error(f"Scale or checkbutton widget for thread {i} not found.")
                     return None, None, None
 
             def validate_and_get_speeds(min_scale, max_scale, i):
-                # Retrieve and validate the min and max speeds
                 try:
                     min_speed = int(min_scale.get_value())
                     max_speed = int(max_scale.get_value())
@@ -608,12 +613,11 @@ class CPUManager:
                     return None, None
 
             def get_frequency_commands(min_speed, max_speed, i):
-                # Convert speeds to KHz and get the commands to apply the min and max frequencies
                 min_frequency_in_khz = min_speed * 1000
                 max_frequency_in_khz = max_speed * 1000
 
-                max_file = cpu_file_search.cpu_files['scaling_max_files'].get(i)
-                min_file = cpu_file_search.cpu_files['scaling_min_files'].get(i)
+                max_file = self.cpu_file_search.cpu_files['scaling_max_files'].get(i)
+                min_file = self.cpu_file_search.cpu_files['scaling_min_files'].get(i)
 
                 if max_file and min_file:
                     max_command = f'echo {max_frequency_in_khz} | tee {max_file} > /dev/null'
@@ -622,11 +626,19 @@ class CPUManager:
                 return None, None
 
             def success_callback():
+                # Handle successful execution of pkexec command
                 self.logger.info("Successfully applied CPU clock speed limits.")
-                self.update_min_max_labels()
+                self.apply_max_min_button.set_sensitive(True)
+                try:
+                    self.settings_applier.applied_settings["min_speeds"] = {i: self.min_scales[i].get_value() for i in self.min_scales if self.min_scales[i].get_value() > 0}
+                    self.settings_applier.applied_settings["max_speeds"] = {i: self.max_scales[i].get_value() for i in self.max_scales if self.max_scales[i].get_value() > 0}
+                    self.settings_applier.applied_settings["checked_threads"] = {i: self.cpu_max_min_checkbuttons[i].get_active() for i in self.cpu_max_min_checkbuttons}
+                    self.settings_applier.save_settings()
+                except Exception as e:
+                    self.logger.error(f"Error saving the applied min/max speeds and checked threads: {e}")
 
             def failure_callback(error_message):
-                # Handle failures from pkexec command
+                self.apply_max_min_button.set_sensitive(True)
                 if error_message == 'canceled':
                     self.logger.info("User canceled the min / max frequency pkexec prompt.")
                 else:
@@ -634,7 +646,9 @@ class CPUManager:
 
             any_active_checkbutton = False
 
-            for i in range(cpu_file_search.thread_count):
+            set_apply_min_max_sensitivity()
+
+            for i in range(self.cpu_file_search.thread_count):
                 min_scale, max_scale, checkbutton = retrieve_widgets_for_thread(i)
                 if min_scale is None or max_scale is None or checkbutton is None:
                     continue  # Skip to the next thread if widgets are not found
@@ -656,26 +670,28 @@ class CPUManager:
                     self.logger.info(f"Skipping clock speed for thread {i} as checkbutton is not active")
 
             if command_list:
-                # If there are commands to execute, run them with pkexec
                 full_command = ' && '.join(command_list)
-                privileged_actions.run_pkexec_command(full_command, success_callback=success_callback, failure_callback=failure_callback)
+                self.privileged_actions.run_pkexec_command(full_command, success_callback=success_callback, failure_callback=failure_callback)
             else:
                 if not any_active_checkbutton:
+                    self.apply_max_min_button.set_sensitive(True)
                     self.show_speed_limits_info_window("You need at least one thread enabled to apply the speed limits.")
                 else:
                     self.logger.info("No valid commands generated to apply clock speed limits.")
+                    self.apply_max_min_button.set_sensitive(True)
 
         except Exception as e:
             self.logger.error(f"Error applying CPU clock speed limits: {e}")
+            self.apply_max_min_button.set_sensitive(True)
 
     def show_speed_limits_info_window(self, message):
         # Show the information dialog for the speed limits info
         try:
-            speed_limits_info_window = widget_factory.create_window("Information", None, 300, 50)
+            speed_limits_info_window = self.widget_factory.create_window("Information", None, 300, 50)
 
-            speed_limits_info_box = widget_factory.create_box(speed_limits_info_window)
+            speed_limits_info_box = self.widget_factory.create_box(speed_limits_info_window)
 
-            speed_limits_info_label = widget_factory.create_label(
+            speed_limits_info_label = self.widget_factory.create_label(
                 speed_limits_info_box,
                 message,
                 margin_start=10, margin_end=10, margin_top=10)
@@ -683,7 +699,7 @@ class CPUManager:
             def on_destroy(widget):
                 speed_limits_info_window.close()
 
-            speed_limits_info_button = widget_factory.create_button(
+            speed_limits_info_button = self.widget_factory.create_button(
                 speed_limits_info_box, "OK", margin_start=131, margin_end=131, margin_bottom=10)
             speed_limits_info_button.connect("clicked", on_destroy)
 
@@ -696,6 +712,9 @@ class CPUManager:
     def set_cpu_governor(self, combobox):
         # Handle the change of CPU governor from the combobox and set it
         try:
+            def set_governor_combobox_sensitivity():
+                self.governor_combobox.set_sensitive(False)
+
             def get_selected_governor():
                 # Retrieve the selected governor from the combobox
                 model = combobox.get_model()
@@ -707,8 +726,8 @@ class CPUManager:
             def get_command_list(governor):
                 # Generate the command list to set the governor
                 command_list = []
-                for i in range(cpu_file_search.thread_count):
-                    governor_file = cpu_file_search.cpu_files['governor_files'].get(i)
+                for i in range(self.cpu_file_search.thread_count):
+                    governor_file = self.cpu_file_search.cpu_files['governor_files'].get(i)
                     if governor_file:
                         command_list.append(f'echo "{governor}" | sudo tee {governor_file} > /dev/null')
                 return command_list
@@ -716,6 +735,12 @@ class CPUManager:
             def success_callback():
                 # Handle successful execution of pkexec command
                 self.logger.info(f"Successfully set governor to {selected_governor}")
+                self.governor_combobox.set_sensitive(True)
+                try:
+                    self.settings_applier.applied_settings["governor"] = selected_governor
+                    self.settings_applier.save_settings()
+                except Exception as e:
+                    self.logger.error(f"Error saving the applied governor setting: {e}")
 
             def failure_callback(error):
                 # Handle failures from pkexec command
@@ -724,10 +749,13 @@ class CPUManager:
                     GLib.idle_add(lambda: combobox.set_active(0))
                 else:
                     self.logger.error(f"Failed to set CPU governor: {error}")
+                self.governor_combobox.set_sensitive(True)
 
             selected_governor = get_selected_governor()
             if selected_governor == "Select Governor" or selected_governor is None:
                 return  # Do nothing if placeholder or no selection is made
+
+            set_governor_combobox_sensitivity()
 
             if selected_governor in self.valid_governors:
                 self.logger.info(f"Setting CPU governor to: {selected_governor}")
@@ -736,15 +764,18 @@ class CPUManager:
                 if command_list:
                     # If there are commands to execute, run them with pkexec
                     full_command = ' && '.join(command_list)
-                    privileged_actions.run_pkexec_command(full_command, success_callback=success_callback, failure_callback=failure_callback)
+                    self.privileged_actions.run_pkexec_command(full_command, success_callback=success_callback, failure_callback=failure_callback)
                 else:
                     self.logger.error("No CPU governor files found to apply clock speed limits.")
+                    self.governor_combobox.set_sensitive(True)
             else:
                 self.logger.error(f"Invalid CPU governor selected: {selected_governor}")
+                self.governor_combobox.set_sensitive(True)
                 GLib.idle_add(lambda: combobox.set_active(0))
 
         except Exception as e:
             self.logger.error(f"An error occurred while handling CPU governor change: {e}")
+            self.governor_combobox.set_sensitive(True)
 
     def toggle_boost(self, widget=None):
         # Toggle the CPU boost clock on or off
@@ -753,17 +784,20 @@ class CPUManager:
             current_status = self.find_boost_type()  # Get the current boost status
             is_enabled = not current_status  # Determine the new boost status
 
+            def set_toggle_boost_sensitivity():
+                self.boost_checkbutton.set_sensitive(False)
+
             def get_command_list():
                 # Generate the command list to toggle boost
                 command_list = []
-                if cpu_file_search.cpu_type == "Intel" and cpu_file_search.intel_boost_path:
+                if self.cpu_file_search.cpu_type == "Intel" and self.cpu_file_search.intel_boost_path:
                     # For Intel CPUs, set the boost value based on the new status
                     value = '0' if is_enabled else '1'
-                    command_list.append(f'echo {value} | sudo tee {cpu_file_search.intel_boost_path} > /dev/null')
+                    command_list.append(f'echo {value} | sudo tee {self.cpu_file_search.intel_boost_path} > /dev/null')
                 else:
                     # For non-Intel CPUs, toggle the boost for each thread
-                    for i in range(cpu_file_search.thread_count):
-                        boost_file = cpu_file_search.cpu_files['boost_files'].get(i)
+                    for i in range(self.cpu_file_search.thread_count):
+                        boost_file = self.cpu_file_search.cpu_files['boost_files'].get(i)
                         if boost_file:
                             value = '1' if is_enabled else '0'
                             command_list.append(f'echo {value} | sudo tee {boost_file} > /dev/null')
@@ -771,10 +805,17 @@ class CPUManager:
 
             def success_callback():
                 # Handle successful execution of pkexec command
-                global_state.boost_enabled = is_enabled  # Update the global state
-                self.schedule_control_tasks()  # Restart the control tasks
-                self.update_boost_checkbutton()  # Update the checkbutton state
                 self.logger.info("CPU boost toggled successfully.")
+                self.global_state.boost_enabled = is_enabled  # Update the global state
+                self.schedule_control_tasks()  # Restart the control tasks
+                self.boost_checkbutton.set_sensitive(True)
+                self.update_boost_checkbutton()  # Update the checkbutton state
+                try:
+                    # Update applied settings
+                    self.settings_applier.applied_settings["boost"] = is_enabled
+                    self.settings_applier.save_settings()
+                except Exception as e:
+                    self.logger.error(f"Error saving the applied boost setting: {e}")
 
             def failure_callback(error_message):
                 # Handle failures from pkexec command
@@ -783,36 +824,44 @@ class CPUManager:
                 else:
                     self.logger.error("Failed to toggle CPU boost: " + error_message)
                 self.schedule_control_tasks()
+                self.boost_checkbutton.set_sensitive(True)
                 self.update_boost_checkbutton()
 
+            set_toggle_boost_sensitivity()
+
             command_list = get_command_list()
-            
+
             if command_list:
                 # If there are commands to execute, run them with pkexec
                 full_command = ' && '.join(command_list)
-                privileged_actions.run_pkexec_command(full_command, success_callback=success_callback, failure_callback=failure_callback)
+                self.privileged_actions.run_pkexec_command(full_command, success_callback=success_callback, failure_callback=failure_callback)
             else:
                 self.logger.error("No commands generated to toggle CPU boost.")
                 self.schedule_control_tasks()
+                self.boost_checkbutton.set_sensitive(True)
                 self.update_boost_checkbutton()
         except Exception as e:
             self.logger.error(f"Error toggling CPU boost: {e}")
             self.schedule_control_tasks()
+            self.boost_checkbutton.set_sensitive(True)
             self.update_boost_checkbutton()
 
     def set_intel_tdp(self, widget=None):
         # Set the TDP (Thermal Design Power) for Intel CPUs
         try:
+            def set_tdp_sensitivity():
+                self.apply_tdp_button.set_sensitive(False)
+
             def validate_cpu_type():
                 # Validate the CPU type
-                if cpu_file_search.cpu_type != "Intel":
+                if self.cpu_file_search.cpu_type != "Intel":
                     self.logger.error("TDP control is only supported for Intel CPUs.")
                     return False
                 return True
 
             def get_tdp_file():
                 # Retrieve the TDP control file path
-                tdp_file = cpu_file_search.intel_tdp_files['tdp']
+                tdp_file = self.cpu_file_search.intel_tdp_files['tdp']
                 if not tdp_file or not os.path.exists(tdp_file):
                     self.logger.error("Intel TDP control file not found.")
                     return None
@@ -826,7 +875,14 @@ class CPUManager:
                 return command, tdp_value_microwatts
 
             def success_callback():
+                # Handle successful execution of pkexec command
                 self.logger.info(f"Successfully set TDP.")
+                self.apply_tdp_button.set_sensitive(True)
+                try:
+                    self.settings_applier.applied_settings["tdp"] = tdp_value_microwatts
+                    self.settings_applier.save_settings()
+                except Exception as e:
+                    self.logger.error(f"Error saving the applied Intel TDP setting: {e}")
 
             def failure_callback(error_message):
                 # Handle failures from pkexec command
@@ -834,6 +890,7 @@ class CPUManager:
                     self.logger.info("User canceled the TDP pkexec prompt.")
                 else:
                     self.logger.error(f"Failed to set TDP for Intel CPU: {error_message}")
+                self.apply_tdp_button.set_sensitive(True)
 
             if not validate_cpu_type():
                 return False
@@ -842,20 +899,26 @@ class CPUManager:
             if not tdp_file:
                 return False
 
+            set_tdp_sensitivity()
+
             command, tdp_value_microwatts = create_tdp_command(tdp_file)
-            privileged_actions.run_pkexec_command(command, success_callback=success_callback, failure_callback=failure_callback)
+            self.privileged_actions.run_pkexec_command(command, success_callback=success_callback, failure_callback=failure_callback)
             return True
 
         except Exception as e:
             self.logger.error(f"Error setting Intel TDP: {e}")
+            self.apply_tdp_button.set_sensitive(True)
             return False
 
     def set_ryzen_tdp(self, widget=None):
         # Set the TDP (Thermal Design Power) for AMD Ryzen CPUs
         try:
+            def set_tdp_sensitivity():
+                self.apply_tdp_button.set_sensitive(False)
+
             def validate_cpu_type():
                 # Validate the CPU type
-                if cpu_file_search.cpu_type != "Other":
+                if self.cpu_file_search.cpu_type != "Other":
                     self.logger.error("TDP control with ryzen_smu is only supported for AMD Ryzen CPUs.")
                     return False
                 return True
@@ -868,7 +931,14 @@ class CPUManager:
                 return command, tdp_value_milliwatts
 
             def success_callback():
+                # Handle successful execution of pkexec command
                 self.logger.info(f"Successfully set TDP")
+                self.apply_tdp_button.set_sensitive(True)
+                try:
+                    self.settings_applier.applied_settings["tdp"] = tdp_value_milliwatts
+                    self.settings_applier.save_settings()
+                except Exception as e:
+                    self.logger.error(f"Error saving the applied AMD Ryzen TDP setting: {e}")
 
             def failure_callback(error_message):
                 # Handle failures from pkexec command
@@ -876,27 +946,34 @@ class CPUManager:
                     self.logger.info("User canceled the TDP pkexec prompt.")
                 else:
                     self.logger.error(f"Failed to set TDP for Ryzen CPU: {error_message}")
+                self.apply_tdp_button.set_sensitive(True)
 
             if not validate_cpu_type():
                 return False
 
-            if not global_state.is_ryzen_smu_installed():
+            if not self.global_state.is_ryzen_smu_installed():
                 self.logger.error("ryzen_smu is not installed.")
                 return False
 
+            set_tdp_sensitivity()
+
             command, tdp_value_milliwatts = create_tdp_command()
-            privileged_actions.run_pkexec_command(command, success_callback=success_callback, failure_callback=failure_callback)
+            self.privileged_actions.run_pkexec_command(command, success_callback=success_callback, failure_callback=failure_callback)
             return True
 
         except Exception as e:
             self.logger.error(f"Error setting Ryzen TDP: {e}")
+            self.apply_tdp_button.set_sensitive(True)
             return False
 
     def set_pbo_curve_offset(self, widget=None):
         try:
+            def set_pbo_sensitivity():
+                self.apply_pbo_button.set_sensitive(False)
+
             def validate_cpu_type():
                 # Validate the CPU type
-                if cpu_file_search.cpu_type != "Other":
+                if self.cpu_file_search.cpu_type != "Other":
                     self.logger.error("PBO curve setting is only supported for AMD Ryzen CPUs.")
                     return False
                 return True
@@ -904,7 +981,7 @@ class CPUManager:
             def create_pbo_command(offset_value):
                 # Create the command to set the PBO curve offset value for all cores
                 commands = []
-                physical_cores = self.parse_cpu_info(cpu_file_search.proc_files['cpuinfo'])[2]
+                physical_cores = self.parse_cpu_info(self.cpu_file_search.proc_files['cpuinfo'])[2]
 
                 # Convert the positive offset_value to a negative offset
                 offset_value = -offset_value
@@ -922,6 +999,13 @@ class CPUManager:
 
             def success_callback():
                 self.logger.info(f"Successfully set PBO curve offset using scale value.")
+                self.apply_pbo_button.set_sensitive(True)
+                try:
+                    # Update applied_settings with the PBO offset value
+                    self.settings_applier.applied_settings["pbo_offset"] = offset_value
+                    self.settings_applier.save_settings()
+                except Exception as e:
+                    self.logger.error(f"Error saving the applied PBO offset setting: {e}")
 
             def failure_callback(error_message):
                 # Handle failures from pkexec command
@@ -929,22 +1013,94 @@ class CPUManager:
                     self.logger.info("User canceled the PBO curve setting pkexec prompt.")
                 else:
                     self.logger.error(f"Failed to set PBO curve offset: {error_message}")
+                self.apply_pbo_button.set_sensitive(True)
 
             if not validate_cpu_type():
                 return False
 
-            if not global_state.is_ryzen_smu_installed():
+            if not self.global_state.is_ryzen_smu_installed():
                 self.logger.error("ryzen_smu is not installed.")
                 return False
 
+            set_pbo_sensitivity()
+
             offset_value = int(self.pbo_curve_scale.get_value())
             command = create_pbo_command(offset_value)
-            privileged_actions.run_pkexec_command(command, success_callback=success_callback, failure_callback=failure_callback)
+            self.privileged_actions.run_pkexec_command(command, success_callback=success_callback, failure_callback=failure_callback)
             return True
 
         except Exception as e:
             self.logger.error(f"Error setting PBO curve offset: {e}")
+            self.apply_pbo_button.set_sensitive(True)
             return False
 
-# Create an instance of CPUManager
-cpu_manager = CPUManager()
+    def set_energy_perf_bias(self, combobox):
+        try:
+            def set_epb_sensitivity():
+                self.energy_perf_bias_combobox.set_sensitive(False)
+
+            def get_selected_bias():
+                # Retrieve the selected energy performance bias from the combobox
+                model = combobox.get_model()
+                active_iter = combobox.get_active_iter()
+                if active_iter is not None:
+                    return model[active_iter][0]
+                return None
+
+            def get_command_list(bias_value):
+                # Generate the command list to set the energy performance bias
+                command_list = []
+                energy_perf_bias_files = self.cpu_file_search.cpu_files['energy_perf_bias_files']
+                for i in range(self.cpu_file_search.thread_count):
+                    bias_file = energy_perf_bias_files.get(i)
+                    if bias_file:
+                        command_list.append(f'echo "{bias_value}" | sudo tee {bias_file} > /dev/null')
+                return command_list
+
+            def success_callback():
+                # Handle successful execution of pkexec command
+                self.logger.info(f"Successfully set energy performance bias to {selected_bias}")
+                self.energy_perf_bias_combobox.set_sensitive(True)
+                try:
+                    self.settings_applier.applied_settings["energy_perf_bias"] = selected_bias
+                    self.settings_applier.save_settings()
+                except Exception as e:
+                    self.logger.error(f"Error saving the applied Intel energy perf bias setting: {e}")
+
+            def failure_callback(error):
+                # Handle failures from pkexec command
+                if error == 'canceled':
+                    self.logger.info("User canceled the energy performance bias change pkexec prompt.")
+                    GLib.idle_add(lambda: combobox.set_active(0))
+                else:
+                    self.logger.error(f"Failed to set energy performance bias: {error}")
+                self.energy_perf_bias_combobox.set_sensitive(True)
+
+            selected_bias = get_selected_bias()
+            if selected_bias == "Select Energy Perf Bias" or selected_bias is None:
+                return  # Do nothing if placeholder or no selection is made
+
+            set_epb_sensitivity()
+
+            bias_value = int(selected_bias.split()[0])
+            valid_bias_values = frozenset([0, 4, 6, 8, 15])
+
+            if bias_value in valid_bias_values:
+                self.logger.info(f"Setting energy performance bias to: {selected_bias}")
+                command_list = get_command_list(bias_value)
+
+                if command_list:
+                    # If there are commands to execute, run them with pkexec
+                    full_command = ' && '.join(command_list)
+                    self.privileged_actions.run_pkexec_command(full_command, success_callback=success_callback, failure_callback=failure_callback)
+                else:
+                    self.logger.error("No energy performance bias files found to apply the bias value.")
+                    self.energy_perf_bias_combobox.set_sensitive(True)
+            else:
+                self.logger.error(f"Invalid energy performance bias value selected: {selected_bias}")
+                GLib.idle_add(lambda: combobox.set_active(0))
+                self.energy_perf_bias_combobox.set_sensitive(True)
+
+        except Exception as e:
+            self.energy_perf_bias_combobox.set_sensitive(True)
+            self.logger.error(f"An error occurred while handling energy performance bias change: {e}")

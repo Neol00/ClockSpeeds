@@ -18,13 +18,11 @@
 
 import os
 import json
-import logging
-from log_setup import get_logger
 
 class DirectoryCache:
-    def __init__(self):
+    def __init__(self, logger):
         # Initialize the logger
-        self.logger = get_logger()
+        self.logger = logger
 
         # Dictionary for the cache
         self.cache = {}
@@ -109,12 +107,12 @@ class DirectoryCache:
                 self.logger.error(f"Access error on {path}: {e}")
 
 class CPUFileSearch:
-    def __init__(self):
+    def __init__(self, logger):
         # Initialize the logger
-        self.logger = get_logger()
+        self.logger = logger
 
         # Create an instance of DirectoryCache
-        self.directory_cache = DirectoryCache()
+        self.directory_cache = DirectoryCache(logger)
 
         # Get the total number of CPU threads
         self.thread_count = os.cpu_count()
@@ -143,6 +141,7 @@ class CPUFileSearch:
         # Dictionary to hold found CPU files
         self.cpu_files = {key: {} for key in self.cpufreq_file_paths.keys()}
         self.cpu_files['package_throttle_time_files'] = {}
+        self.cpu_files['energy_perf_bias_files'] = {}
 
         # Path to the Intel boost file
         self.intel_boost_path = None
@@ -216,6 +215,7 @@ class CPUFileSearch:
             self.find_thermal_file()
             self.find_intel_tdp_files()
             self.find_cache_files()
+            self.find_energy_perf_bias_files()
 
             # Save the paths to the cache
             directories_to_save = {
@@ -225,7 +225,7 @@ class CPUFileSearch:
                 "package_temp_file": self.package_temp_file,
                 "proc_files": self.proc_files,
                 "intel_tdp_files": self.intel_tdp_files,
-                "cache_files": self.cache_files
+                "cache_files": self.cache_files,
             }
             self.directory_cache.save_directories_to_file(directories_to_save)
         except Exception as e:
@@ -405,5 +405,23 @@ class CPUFileSearch:
             except Exception as e:
                 self.logger.error(f"Error searching cache directory: {e}")
 
-# Create an instance of CPUFileSearch
-cpu_file_search = CPUFileSearch()
+    def find_energy_perf_bias_files(self):
+        # Find energy_perf_bias files for each CPU thread
+        if self.cpu_type != "Intel":
+            return
+        
+        try:
+            for i in range(self.thread_count):
+                thread_power_directory = os.path.join(self.cpu_directory, f"cpu{i}", "power")
+                found_files = 0
+                for root, dirs, files in self.directory_cache.cached_directory_walk(thread_power_directory):
+                    if 'energy_perf_bias' in files:
+                        file_path = os.path.join(root, 'energy_perf_bias')
+                        self.cpu_files['energy_perf_bias_files'][i] = file_path
+                        found_files += 1
+                        break
+                if found_files == 0:
+                    self.logger.warning(f'energy_perf_bias file for thread {i} does not exist at {thread_power_directory}.')
+
+        except Exception as e:
+            self.logger.error(f"Error finding energy_perf_bias files for threads: {e}")

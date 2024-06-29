@@ -19,13 +19,11 @@
 import subprocess
 from threading import Thread
 from gi.repository import GLib
-import logging
-from log_setup import get_logger
 
 class PrivilegedActions:
-    def __init__(self):
+    def __init__(self, logger):
         # Initialize the logger
-        self.logger = get_logger()
+        self.logger = logger
 
     # Run commands with elevated privileges using pkexec
     def run_pkexec_command(self, command, cwd=None, success_callback=None, failure_callback=None):
@@ -61,6 +59,3 @@ class PrivilegedActions:
                     GLib.idle_add(failure_callback, f"unexpected_error: {e}")
 
         Thread(target=run_command).start()
-
-# Create an instance of PrivilegedActions
-privileged_actions = PrivilegedActions()

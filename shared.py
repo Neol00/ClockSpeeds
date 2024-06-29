@@ -17,14 +17,12 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import subprocess
-import logging
-from log_setup import get_logger
-from config_setup import config_manager
 
 class GlobalState:
-    def __init__(self):
-        # Initialize the logger
-        self.logger = get_logger()
+    def __init__(self, config_manager, logger):
+        # References to instances
+        self.config_manager = config_manager
+        self.logger = logger
 
         # Minimum and maximum scale values for CPU frequency adjustment
         self.SCALE_MIN = int(config_manager.get_setting('Settings', 'clock_scale_minimum', 1))
@@ -51,6 +49,12 @@ class GlobalState:
         # Flag to control the MHz to GHz toggle
         self.display_ghz = False
 
+        # Flag to ignore the Apply On Boot checkbutton toggle
+        self.ignore_boot_checkbutton_toggle = False
+
+        # Flag to remember the Apply On Boot checkbutton previous toggle
+        self.previous_boot_checkbutton_state = False
+
         # Maximum TDP value
         self.max_tdp_value = None
 
@@ -62,32 +66,29 @@ class GlobalState:
     def save_settings(self):
         # Save the current settings to the configuration file
         try:
-            if not config_manager.get_setting('Settings', 'clock_scale_minimum'):
-                config_manager.set_setting('Settings', 'clock_scale_minimum', str(self.SCALE_MIN))
-            if not config_manager.get_setting('Settings', 'clock_scale_maximum'):
-                config_manager.set_setting('Settings', 'clock_scale_maximum', str(self.SCALE_MAX))
-            if not config_manager.get_setting('Settings', 'tdp_scale_minimum'):
-                config_manager.set_setting('Settings', 'tdp_scale_minimum', str(self.TDP_SCALE_MIN))
-            if not config_manager.get_setting('Settings', 'tdp_scale_maximum'):
-                config_manager.set_setting('Settings', 'tdp_scale_maximum', str(self.TDP_SCALE_MAX))
-            if not config_manager.get_setting('Settings', 'pbo_scale_minimum'):
-                config_manager.set_setting('Settings', 'pbo_scale_minimum', str(self.PBO_SCALE_MIN))
-            if not config_manager.get_setting('Settings', 'pbo_scale_maximum'):
-                config_manager.set_setting('Settings', 'pbo_scale_maximum', str(self.PBO_SCALE_MAX))
-            if not config_manager.get_setting('Settings', 'logging_level'):
-                config_manager.set_setting('Settings', 'logging_level', 'WARNING')
+            if not self.config_manager.get_setting('Settings', 'clock_scale_minimum'):
+                self.config_manager.set_setting('Settings', 'clock_scale_minimum', str(self.SCALE_MIN))
+            if not self.config_manager.get_setting('Settings', 'clock_scale_maximum'):
+                self.config_manager.set_setting('Settings', 'clock_scale_maximum', str(self.SCALE_MAX))
+            if not self.config_manager.get_setting('Settings', 'tdp_scale_minimum'):
+                self.config_manager.set_setting('Settings', 'tdp_scale_minimum', str(self.TDP_SCALE_MIN))
+            if not self.config_manager.get_setting('Settings', 'tdp_scale_maximum'):
+                self.config_manager.set_setting('Settings', 'tdp_scale_maximum', str(self.TDP_SCALE_MAX))
+            if not self.config_manager.get_setting('Settings', 'pbo_scale_minimum'):
+                self.config_manager.set_setting('Settings', 'pbo_scale_minimum', str(self.PBO_SCALE_MIN))
+            if not self.config_manager.get_setting('Settings', 'pbo_scale_maximum'):
+                self.config_manager.set_setting('Settings', 'pbo_scale_maximum', str(self.PBO_SCALE_MAX))
+            if not self.config_manager.get_setting('Settings', 'logging_level'):
+                self.config_manager.set_setting('Settings', 'logging_level', 'WARNING')
 
             self.logger.info("Default settings saved successfully.")
         except Exception as e:
             self.logger.error(f"Error saving default settings: {e}")
 
-# Create an instance of GlobalState to manage global settings
-global_state = GlobalState()
-
 class GuiComponents:
-    def __init__(self):
+    def __init__(self, logger):
         # Initialize the logger
-        self.logger = get_logger()
+        self.logger = logger
 
         # Dictionary to store GUI components
         self.components = {}
@@ -111,6 +112,3 @@ class GuiComponents:
         if key in self.components:
             del self.components[key]
             self.logger.info(f"Deleted widget: {key}")
-
-# Create an instance of GuiComponents to manage GUI components
-gui_components = GuiComponents()

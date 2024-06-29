@@ -19,7 +19,6 @@
 import os
 import logging
 from logging.handlers import RotatingFileHandler
-from config_setup import config_manager
 
 # Valid log levels
 valid_log_levels = frozenset(['ERROR', 'INFO', 'WARNING'])
@@ -48,11 +47,14 @@ class DeduplicationFilter(logging.Filter):
 class LogSetup:
     _logging_initialized = False  # Class variable to track if the logging level has been set
 
-    def __init__(self, log_file_path=None, max_file_size=20 * 1024 * 1024, backup_count=2):
+    def __init__(self, config_manager, log_file_path=None, max_file_size=20 * 1024 * 1024, backup_count=2):
         # Initialize the LogSetup instance with default parameters.
         self.log_file_path = log_file_path or self.default_log_file_path()
         self.max_file_size = max_file_size
         self.backup_count = backup_count
+
+        # Initialize the config manager
+        self.config_manager = config_manager
 
         if not LogSetup._logging_initialized:
             self.logger = self.setup_logging()
@@ -73,7 +75,7 @@ class LogSetup:
             os.makedirs(log_dir, exist_ok=True)
 
             # Retrieve the logging level from configuration
-            config_log_level = config_manager.get_setting('Settings', 'logging_level', default='WARNING').upper()
+            config_log_level = self.config_manager.get_setting('Settings', 'logging_level', default='WARNING').upper()
             log_level = {'ERROR': logging.ERROR, 'INFO': logging.INFO, 'WARNING': logging.WARNING}.get(config_log_level, logging.ERROR)
             logger = logging.getLogger()
             logger.setLevel(log_level)
@@ -96,10 +98,3 @@ class LogSetup:
             logger.error(f"Failed to set up custom logging, using basic config. Error: {e}")
 
         return logger
-
-# Create an instance of LogSetup
-log_setup = LogSetup()
-
-# Provide a method to get the configured logger
-def get_logger():
-    return log_setup.logger

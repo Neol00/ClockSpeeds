@@ -162,15 +162,15 @@ class SettingsWindow:
 
             scale_info_label = self.widget_factory.create_label(
                 scale_info_box,
-                "Enabling this option allows setting CPU speeds beyond standard limits.\n\n"
+                "Enabling this option allows setting CPU speeds beyond standard limits.\n"
                 "Note: values outside your CPU's allowed range may not work as expected.",
-                margin_start=10, margin_end=10, margin_top=10)
+                margin_start=10, margin_end=10, margin_top=10, margin_bottom=10)
 
             def on_destroy(widget):
                 scale_info_window.close()
 
             scale_info_button = self.widget_factory.create_button(
-                scale_info_box, "OK", margin_start=165, margin_end=165, margin_bottom=10)
+                scale_info_box, "OK", margin_start=164, margin_end=164, margin_bottom=10)
             scale_info_button.connect("clicked", on_destroy)
 
             scale_info_window.connect("close-request", on_destroy)
@@ -188,9 +188,9 @@ class SettingsWindow:
 
             sync_info_label = self.widget_factory.create_label(
                 sync_info_box,
-                "Enabling this option will synchronize the minimum and maximum CPU\n\n"
+                "Enabling this option will synchronize the minimum and maximum CPU\n"
                 "frequency scales across all threads.",
-                margin_start=10, margin_end=10, margin_top=10)
+                margin_start=10, margin_end=10, margin_top=10, margin_bottom=10)
 
             def on_destroy(widget):
                 sync_info_window.close()
@@ -214,14 +214,14 @@ class SettingsWindow:
 
             mhz_to_ghz_info_label = self.widget_factory.create_label(
                 mhz_to_ghz_info_box,
-                "Enabling this option will display GHz instead of MHz",
-                margin_start=10, margin_end=10, margin_top=10)
+                "Enabling this option will display labels in GHz instead of MHz",
+                margin_start=10, margin_end=10, margin_top=10, margin_bottom=10)
 
             def on_destroy(widget):
                 mhz_to_ghz_info_window.close()
 
             mhz_to_ghz_info_button = self.widget_factory.create_button(
-                mhz_to_ghz_info_box, "OK", margin_start=100, margin_end=100, margin_bottom=10)
+                mhz_to_ghz_info_box, "OK", margin_start=126, margin_end=126, margin_bottom=10)
             mhz_to_ghz_info_button.connect("clicked", on_destroy)
 
             mhz_to_ghz_info_window.connect("close-request", on_destroy)
@@ -239,17 +239,17 @@ class SettingsWindow:
 
             apply_boot_info_label = self.widget_factory.create_label(
                 apply_boot_info_box,
-                "Enabling this option will apply the settings you have specifically\n\n"
-                "changed on boot with a systemd service and a complimentary\n\n"
-                "script created in /usr/local/bin/apply_clockspeeds_settings.sh\n\n"
-                "Disabling this option will delete the systemd service\n\n",
-                margin_start=10, margin_end=10, margin_top=10)
+                "Enabling this option will apply the settings you have specifically\n"
+                "changed on boot with a systemd service and a complimentary\n"
+                "script created in /usr/local/bin/apply_clockspeeds_settings.sh\n"
+                "Disabling this option will disable and delete those files",
+                margin_start=10, margin_end=10, margin_top=10, margin_bottom=10)
 
             def on_destroy(widget):
                 apply_boot_info_window.close()
 
             apply_boot_info_button = self.widget_factory.create_button(
-                apply_boot_info_box, "OK", margin_start=100, margin_end=100, margin_bottom=10)
+                apply_boot_info_box, "OK", margin_start=133, margin_end=133, margin_bottom=10)
             apply_boot_info_button.connect("clicked", on_destroy)
 
             apply_boot_info_window.connect("close-request", on_destroy)

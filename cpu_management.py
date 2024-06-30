@@ -153,7 +153,7 @@ class CPUManager:
             self.apply_tdp_button = self.gui_components['apply_tdp_button']
             self.pbo_curve_scale = self.gui_components['pbo_curve_scale']
             self.apply_pbo_button = self.gui_components['apply_pbo_button']
-            self.energy_perf_bias_combobox = self.gui_components['energy_perf_bias_combobox']
+            self.epb_combobox = self.gui_components['epb_combobox']
         except KeyError as e:
             self.logger.error(f"Error setting up cpu_manager gui_components: Component {e} not found")
 
@@ -1037,10 +1037,10 @@ class CPUManager:
     def set_energy_perf_bias(self, combobox):
         try:
             def set_epb_sensitivity():
-                self.energy_perf_bias_combobox.set_sensitive(False)
+                self.epb_combobox.set_sensitive(False)
 
             def get_selected_bias():
-                # Retrieve the selected energy performance bias from the combobox
+                # Retrieve the selected EPB from the combobox
                 model = combobox.get_model()
                 active_iter = combobox.get_active_iter()
                 if active_iter is not None:
@@ -1048,36 +1048,36 @@ class CPUManager:
                 return None
 
             def get_command_list(bias_value):
-                # Generate the command list to set the energy performance bias
+                # Generate the command list to set the EPB
                 command_list = []
-                energy_perf_bias_files = self.cpu_file_search.cpu_files['energy_perf_bias_files']
+                epb_files = self.cpu_file_search.cpu_files['epb_files']
                 for i in range(self.cpu_file_search.thread_count):
-                    bias_file = energy_perf_bias_files.get(i)
+                    bias_file = epb_files.get(i)
                     if bias_file:
                         command_list.append(f'echo "{bias_value}" | sudo tee {bias_file} > /dev/null')
                 return command_list
 
             def success_callback():
                 # Handle successful execution of pkexec command
-                self.logger.info(f"Successfully set energy performance bias to {selected_bias}")
-                self.energy_perf_bias_combobox.set_sensitive(True)
+                self.logger.info(f"Successfully set Intel EPB to {selected_bias}")
+                self.epb_combobox.set_sensitive(True)
                 try:
-                    self.settings_applier.applied_settings["energy_perf_bias"] = selected_bias
+                    self.settings_applier.applied_settings["epb"] = selected_bias
                     self.settings_applier.save_settings()
                 except Exception as e:
-                    self.logger.error(f"Error saving the applied Intel energy perf bias setting: {e}")
+                    self.logger.error(f"Error saving the applied Intel EPB setting: {e}")
 
             def failure_callback(error):
                 # Handle failures from pkexec command
                 if error == 'canceled':
-                    self.logger.info("User canceled the energy performance bias change pkexec prompt.")
+                    self.logger.info("User canceled the Intel EPB change pkexec prompt.")
                     GLib.idle_add(lambda: combobox.set_active(0))
                 else:
-                    self.logger.error(f"Failed to set energy performance bias: {error}")
-                self.energy_perf_bias_combobox.set_sensitive(True)
+                    self.logger.error(f"Failed to set Intel EPB: {error}")
+                self.epb_combobox.set_sensitive(True)
 
             selected_bias = get_selected_bias()
-            if selected_bias == "Select Energy Perf Bias" or selected_bias is None:
+            if selected_bias == "Select Energy Performance Bias" or selected_bias is None:
                 return  # Do nothing if placeholder or no selection is made
 
             set_epb_sensitivity()
@@ -1086,7 +1086,7 @@ class CPUManager:
             valid_bias_values = frozenset([0, 4, 6, 8, 15])
 
             if bias_value in valid_bias_values:
-                self.logger.info(f"Setting energy performance bias to: {selected_bias}")
+                self.logger.info(f"Setting Intel EPB to: {selected_bias}")
                 command_list = get_command_list(bias_value)
 
                 if command_list:
@@ -1094,13 +1094,13 @@ class CPUManager:
                     full_command = ' && '.join(command_list)
                     self.privileged_actions.run_pkexec_command(full_command, success_callback=success_callback, failure_callback=failure_callback)
                 else:
-                    self.logger.error("No energy performance bias files found to apply the bias value.")
-                    self.energy_perf_bias_combobox.set_sensitive(True)
+                    self.logger.error("No Intel EPB files found to apply the bias value.")
+                    self.epb_combobox.set_sensitive(True)
             else:
-                self.logger.error(f"Invalid energy performance bias value selected: {selected_bias}")
+                self.logger.error(f"Invalid Intel EPB value selected: {selected_bias}")
                 GLib.idle_add(lambda: combobox.set_active(0))
-                self.energy_perf_bias_combobox.set_sensitive(True)
+                self.epb_combobox.set_sensitive(True)
 
         except Exception as e:
-            self.energy_perf_bias_combobox.set_sensitive(True)
-            self.logger.error(f"An error occurred while handling energy performance bias change: {e}")
+            self.epb_combobox.set_sensitive(True)
+            self.logger.error(f"An error occurred while handling Intel EPB change: {e}")

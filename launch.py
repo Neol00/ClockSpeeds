@@ -90,7 +90,7 @@ class Launcher:
         main_script_path = os.path.join(self.script_dir, 'main.py')  # Path to the main application script
 
         try:
-            process = Popen(['python3', main_script_path], stdout=PIPE, stderr=PIPE)
+            process = Popen(['python', main_script_path], stdout=PIPE, stderr=PIPE)
             stdout, stderr = process.communicate()
 
             if process.returncode != 0:

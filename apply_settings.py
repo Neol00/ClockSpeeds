@@ -42,20 +42,20 @@ class SettingsApplier:
         try:
             if os.path.exists(self.SETTINGS_FILE):
                 os.remove(self.SETTINGS_FILE)
-                self.logger.info("Old settings file deleted.")
+                self.logger.info("Old command settings file deleted.")
             with open(self.SETTINGS_FILE, 'w') as f:
                 json.dump({}, f)
-            self.logger.info("New settings file created.")
+            self.logger.info("New command settings file created.")
         except Exception as e:
-            self.logger.error(f"Failed to initialize settings file: {e}")
+            self.logger.error(f"Failed to initialize command settings file: {e}")
 
     def cleanup(self):
         try:
             if os.path.exists(self.SETTINGS_FILE):
                 os.remove(self.SETTINGS_FILE)
-                self.logger.info("Settings file deleted.")
+                self.logger.info("Command settings file deleted.")
         except Exception as e:
-            self.logger.error(f"Failed to delete settings file: {e}")
+            self.logger.error(f"Failed to delete command settings file: {e}")
 
     def setup_gui_components(self):
         try:
@@ -66,21 +66,21 @@ class SettingsApplier:
             self.boost_checkbutton = self.gui_components['boost_checkbutton']
             self.tdp_scale = self.gui_components['tdp_scale']
             self.pbo_curve_scale = self.gui_components['pbo_curve_scale']
-            self.energy_perf_bias_combobox = self.gui_components['energy_perf_bias_combobox']
+            self.epb_combobox = self.gui_components['epb_combobox']
             self.apply_on_boot_checkbutton = self.gui_components['apply_on_boot_checkbutton']
         except KeyError as e:
-            self.logger.error(f"Error setting up GUI components: Component {e} not found")
+            self.logger.error(f"Error setting up apply_settings gui_components: Component {e} not found")
 
     def load_settings(self):
         try:
             with open(self.SETTINGS_FILE, 'r') as f:
                 self.settings = json.load(f)
-            self.logger.info("Settings loaded.")
+            self.logger.info("Command settings loaded.")
         except FileNotFoundError:
-            self.logger.info("Settings file not found.")
+            self.logger.info("Command settings file not found.")
             self.settings = {}
         except Exception as e:
-            self.logger.error(f"Failed to load settings: {e}")
+            self.logger.error(f"Failed to load command settings: {e}")
             self.settings = {}
 
     def save_settings(self):
@@ -89,9 +89,9 @@ class SettingsApplier:
                 json.dump(self.applied_settings, f)
                 self.settings_applied = True
                 self.update_checkbutton_sensitivity()
-            self.logger.info("Settings saved successfully.")
+            self.logger.info("Command settings saved successfully.")
         except Exception as e:
-            self.logger.error(f"Failed to save settings: {e}")
+            self.logger.error(f"Failed to save command settings: {e}")
 
     def update_checkbutton_sensitivity(self):
         try:
@@ -127,14 +127,14 @@ class SettingsApplier:
         self.tdp_scale.set_value(self.settings.get("tdp", 0))
         self.pbo_curve_scale.set_value(self.settings.get("pbo_offset", 0))
 
-        energy_perf_bias = self.settings.get("energy_perf_bias")
-        if energy_perf_bias:
-            model = self.energy_perf_bias_combobox.get_model()
+        epb = self.settings.get("epb")
+        if epb:
+            model = self.epb_combobox.get_model()
             for i, row in enumerate(model):
-                if row[0] == energy_perf_bias:
-                    self.energy_perf_bias_combobox.set_active(i)
+                if row[0] == epb:
+                    self.epb_combobox.set_active(i)
                     break
-        self.logger.info("Settings loaded into UI.")
+        self.logger.info("Command settings loaded into UI.")
 
     def create_apply_script(self):
         try:
@@ -142,7 +142,7 @@ class SettingsApplier:
 
             commands = []
 
-            self.logger.info(f"Loaded settings: {self.settings}")
+            self.logger.info(f"Loaded command settings: {self.settings}")
 
             min_speeds = self.settings.get("min_speeds", {})
             max_speeds = self.settings.get("max_speeds", {})
@@ -200,15 +200,15 @@ class SettingsApplier:
             if pbo_offset is not None:
                 commands.append(self.create_pbo_command(pbo_offset))
 
-            energy_perf_bias = self.settings.get("energy_perf_bias")
-            if energy_perf_bias and energy_perf_bias != "Select Energy Perf Bias":
-                bias_value = int(energy_perf_bias.split()[0])
+            epb = self.settings.get("epb")
+            if epb and epb != "Select Energy Performance Bias":
+                bias_value = int(epb.split()[0])
                 for i in range(self.cpu_file_search.thread_count):
-                    bias_file = self.cpu_file_search.cpu_files["energy_perf_bias_files"].get(i)
+                    bias_file = self.cpu_file_search.cpu_files["epb_files"].get(i)
                     if bias_file:
                         commands.append(f'echo {bias_value} | tee {bias_file} > /dev/null')
                     else:
-                        self.logger.error(f"Energy performance bias file not found for thread {i}")
+                        self.logger.error(f"Intel energy_perf_bias files not found for thread {i}")
 
             if not commands:
                 self.logger.error("No commands generated to execute.")
@@ -221,12 +221,12 @@ class SettingsApplier:
             with open(tmp_script_path, 'w') as f:
                 f.write(script_content)
 
-            self.logger.info("Apply script created successfully in /tmp/")
+            self.logger.info("Command apply script created successfully in /tmp/")
 
             return tmp_script_path
 
         except Exception as e:
-            self.logger.error(f"Error creating apply script: {e}")
+            self.logger.error(f"Error creating command apply script: {e}")
             return None
 
     def create_pbo_command(self, offset_value):
@@ -252,7 +252,7 @@ class SettingsApplier:
         try:
             apply_script_path = self.create_apply_script()
             if not apply_script_path:
-                raise Exception("Failed to create apply script")
+                raise Exception("Failed to create command apply script")
 
             service_content = f"""[Unit]
 Description=Apply ClockSpeeds settings

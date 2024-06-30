@@ -19,8 +19,7 @@
 import os
 import gi
 gi.require_version('Gtk', '4.0')
-gi.require_version('Gio', '2.0')
-from gi.repository import Gtk, Gio, GLib
+from gi.repository import Gtk, GLib
 from config_setup import ConfigManager
 from log_setup import LogSetup
 from shared import GlobalState, GuiComponents
@@ -34,10 +33,8 @@ from css_setup import CssManager
 from settings_window_setup import SettingsWindow
 
 class ClockSpeedsApp(Gtk.Application):
-    def __init__(self, *args, **kwargs):
-        # Initialize the logger
-
-        super().__init__(*args, application_id="org.ClockSpeeds", flags=Gio.ApplicationFlags.FLAGS_NONE, **kwargs)
+    def __init__(self):
+        super().__init__(application_id="org.ClockSpeeds")
 
         # Set up the directory and icon paths
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -114,6 +111,7 @@ class ClockSpeedsApp(Gtk.Application):
             self.update_scales()
             self.set_tdp_widgets()
             self.set_pbo_widgets()
+            self.set_epb_widget()
             self.settings_applier.update_checkbutton_sensitivity()
             self.settings_window.init_display_ghz_setting()
             self.global_state.save_settings()
@@ -136,7 +134,7 @@ class ClockSpeedsApp(Gtk.Application):
                 self.notebook, 'Monitor')
             self.control_tab = self.widget_factory.create_tab(
                 self.notebook, 'Control')
-            
+
             # Connect the switch-page signal
             self.notebook.connect("switch-page", self.on_tab_switch)
         except Exception as e:
@@ -482,11 +480,11 @@ class ClockSpeedsApp(Gtk.Application):
                 control_fixed, "Apply PBO Offset", self.cpu_manager.set_pbo_curve_offset, x=190, y=y_offset + 280, margin_bottom=10)
 
             # Add Energy Performance Bias ComboBox
-            self.energy_perf_bias_combobox = self.widget_factory.create_combobox(
-                control_fixed, ["Select Energy Perf Bias", "0 Performance", "4 Balance-Performance", "6 Normal", "8 Balance-Power", "15 Power"],
-                self.cpu_manager.set_energy_perf_bias, x=178, y=y_offset + 245, margin_bottom=10)
-            self.energy_perf_bias_combobox.set_active(0)
-            self.energy_perf_bias_combobox.set_tooltip_text("Select Intel performance and energy bias hint")
+            self.epb_combobox = self.widget_factory.create_combobox(
+                control_fixed, ["Select Energy Performance Bias", "0 Performance", "4 Balance-Performance", "6 Normal", "8 Balance-Power", "15 Power"],
+                self.cpu_manager.set_energy_perf_bias, x=155, y=y_offset + 245, margin_bottom=10)
+            self.epb_combobox.set_active(0)
+            self.epb_combobox.set_tooltip_text("Select Intel performance and energy bias hint")
 
             self.initialization_complete = True
             self.update_check_all_state(None)
@@ -522,7 +520,7 @@ class ClockSpeedsApp(Gtk.Application):
             self.gui_components['apply_tdp_button'] = self.apply_tdp_button
             self.gui_components['pbo_curve_scale'] = self.pbo_curve_scale
             self.gui_components['apply_pbo_button'] = self.apply_pbo_button
-            self.gui_components['energy_perf_bias_combobox'] = self.energy_perf_bias_combobox
+            self.gui_components['epb_combobox'] = self.epb_combobox
             self.logger.info("Widgets added to gui_components.")
         except Exception as e:
             self.logger.error(f"Error adding main widgets to gui_components: {e}")
@@ -534,7 +532,7 @@ class ClockSpeedsApp(Gtk.Application):
             self.scale_manager.setup_gui_components()
             self.settings_applier.setup_gui_components()
         except Exception as e:
-            self.logger.error(f"Error setting up GUI components: {e}")
+            self.logger.error(f"Error setting up gui_components: {e}")
 
     def update_scales(self):
         # Update the scales from the scale manager
@@ -627,7 +625,17 @@ class ClockSpeedsApp(Gtk.Application):
                 self.pbo_curve_scale.set_visible(False)
                 self.apply_pbo_button.set_visible(False)
         except Exception as e:
-            self.logger.error(f"Error setting PBO widgets visibility: {e}")
+            self.logger.error(f"Error setting AMD Ryzen PBO widgets visibility: {e}")
+
+    def set_epb_widget(self):
+        # Sets the visibility of the TDP widgets based on tdp_installed
+        try:
+            if self.cpu_file_search.cpu_type == "Intel":
+                self.epb_combobox.set_visible(True)
+            else:
+                self.epb_combobox.set_visible(False)
+        except Exception as e:
+            self.logger.error(f"Error setting Intel EPB widgets visibility: {e}")
 
 def main():
     # Main function to start the application
@@ -635,9 +643,7 @@ def main():
         app = ClockSpeedsApp()
         app.run()
     except Exception as e:
-        log_setup = LogSetup(None)
-        logger = log_setup.logger
-        logger.error(f"Error launching the main application: {e}")
+        app.logger.error(f"Error launching the main application: {e}")
 
 if __name__ == "__main__":
     main()

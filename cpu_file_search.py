@@ -141,7 +141,7 @@ class CPUFileSearch:
         # Dictionary to hold found CPU files
         self.cpu_files = {key: {} for key in self.cpufreq_file_paths.keys()}
         self.cpu_files['package_throttle_time_files'] = {}
-        self.cpu_files['energy_perf_bias_files'] = {}
+        self.cpu_files['epb_files'] = {}
 
         # Path to the Intel boost file
         self.intel_boost_path = None
@@ -417,11 +417,11 @@ class CPUFileSearch:
                 for root, dirs, files in self.directory_cache.cached_directory_walk(thread_power_directory):
                     if 'energy_perf_bias' in files:
                         file_path = os.path.join(root, 'energy_perf_bias')
-                        self.cpu_files['energy_perf_bias_files'][i] = file_path
+                        self.cpu_files['epb_files'][i] = file_path
                         found_files += 1
                         break
                 if found_files == 0:
-                    self.logger.warning(f'energy_perf_bias file for thread {i} does not exist at {thread_power_directory}.')
+                    self.logger.warning(f'Intel energy_perf_bias file for thread {i} does not exist at {thread_power_directory}.')
 
         except Exception as e:
-            self.logger.error(f"Error finding energy_perf_bias files for threads: {e}")
+            self.logger.error(f"Error finding Intel energy_perf_bias files for threads: {e}")

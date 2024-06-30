@@ -20,7 +20,8 @@ This project is in early development so some things might not work as expected.
 * Select governor,
 * Toggle boost,
 * Change TDP,
-* Set PBO offset curve (for AMD Ryzen CPU's only)
+* Set AMD Ryzen PBO offset curve
+* Set Intel Energy Performance Bias
 
 <img src="images/ClockSpeeds-Preview1.png" alt="Sample Image" width="470" height="400">
 
@@ -52,8 +53,13 @@ or run the application directly with.
 python launch.py
 ```
 
-When you launch the application the first time it creates a config.ini file inside your home directory's .config folder containing tunable settings 
-that can be changed by changing the content of the config.ini file or inside the application.
+You could also download one of the release package files, though cloning the repository is generally recommended.
+
+On initial launch, the application generates a `config.ini` file within the `.config` folder of your home directory. This file contains tunable settings that can be adjusted either directly within the `config.ini` file or through the application interface.
+
+The application dynamically searches for system-specific CPU files to access and modify. It saves the directories and files to a JSON cache file located in the `.cache` folder of your home directory. If this cache file exists, the application will bypass the search and utilize the cache to reduce unnecessary CPU usage. Should you encounter issues, manually deleting the cache file will force the application to perform a new search.
+
+If you want the settings to be applied automatically on subsequent system startups, enable the "Apply on Boot" option in the settings window. This option is only available after you have applied a setting, as it will only activate the settings you have specifically modified. This option creates a systemd service at `/etc/systemd/system/clockspeeds.service` and a complementary script at `/usr/local/bin/apply_clockspeeds_settings.sh`, which includes the commands necessary to apply the set settings. If you wish to disable and remove the service and script, simply deactivate the "Apply on Boot" option or do so manually.
 
 ## Prerequisites
 
@@ -61,18 +67,21 @@ What things you need to run the application and how to install them:
 
 * python
 * gtk4
+* polkit
 * gobject-introspection
 * python-gobject
-* ryzen_smu (for AMD Ryzen CPU's full functionality only)
+* ryzen_smu (for AMD Ryzen CPU's full functionality)
 
 Arch Linux:
 
 ```sh
-sudo pacman -S python gtk4 gobject-introspection python-gobject
+sudo pacman -Sy --needed python gtk4 polkit gobject-introspection python-gobject
 ```
 
 If you are using a AMD Ryzen CPU i recommend that you download and install ryzen_smu manually from:
+```sh
 https://github.com/leogx9r/ryzen_smu
+```
 
 ## License
 

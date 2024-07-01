@@ -56,7 +56,7 @@ class ClockSpeedsApp(Gtk.Application):
         self.privileged_actions = PrivilegedActions(
             self.logger)
         self.settings_applier = SettingsApplier(
-            self.logger, self.global_state, self.gui_components, self.cpu_file_search, self.privileged_actions)
+            self.logger, self.global_state, self.gui_components, self.widget_factory, self.cpu_file_search, self.privileged_actions)
         self.cpu_manager = CPUManager(
             self.config_manager, self.logger, self.global_state, self.gui_components, self.widget_factory,
             self.cpu_file_search, self.privileged_actions, self.settings_applier)
@@ -111,6 +111,7 @@ class ClockSpeedsApp(Gtk.Application):
             self.set_tdp_widgets()
             self.set_pbo_widgets()
             self.set_epb_widget()
+            self.settings_applier.initialize_settings_file()
             self.settings_applier.update_checkbutton_sensitivity()
             self.settings_window.init_display_ghz_setting()
             self.global_state.save_settings()

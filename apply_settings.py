@@ -23,23 +23,37 @@ from gi.repository import Gtk, GLib
 
 class SettingsApplier:
     SETTINGS_FILE = "/tmp/clockspeeds_settings.json"
+    APPLY_SCRIPT_PATH = "/usr/local/bin/apply_clockspeeds_settings.sh"
+    SERVICE_PATH = "/etc/systemd/system/clockspeeds.service"
 
-    def __init__(self, logger, global_state, gui_components, cpu_file_search, privileged_actions):
+    def __init__(self, logger, global_state, gui_components, widget_factory, cpu_file_search, privileged_actions):
+        # References to instances
         self.logger = logger
         self.global_state = global_state
         self.gui_components = gui_components
+        self.widget_factory = widget_factory
         self.cpu_file_search = cpu_file_search
         self.privileged_actions = privileged_actions
 
         self.applied_settings = {}
         self.settings_applied = False  # Track if any settings have been applied
-
-        self.initialize_settings_file()
+        self.settings_applied_on_boot = False  # Track if any settings have been applied across startups
 
         atexit.register(self.cleanup)
 
     def initialize_settings_file(self):
         try:
+            # Check if the apply script or systemd service exists
+            if os.path.exists(self.APPLY_SCRIPT_PATH) or os.path.exists(self.SERVICE_PATH):
+                self.logger.info("Apply script or systemd service found, enabling Apply On Boot checkbutton.")
+                self.settings_applied_on_boot = True
+                self.global_state.ignore_boot_checkbutton_toggle = True
+                self.apply_on_boot_checkbutton.set_active(True)
+                self.global_state.ignore_boot_checkbutton_toggle = False
+            else:
+                self.logger.info("No apply script or systemd service found.")
+
+            # Check if the tmp command settings file still exists, if so delete it and create a new one
             if os.path.exists(self.SETTINGS_FILE):
                 os.remove(self.SETTINGS_FILE)
                 self.logger.info("Old command settings file deleted.")
@@ -50,6 +64,7 @@ class SettingsApplier:
             self.logger.error(f"Failed to initialize command settings file: {e}")
 
     def cleanup(self):
+        # Delete the tmp command settings file on exit
         try:
             if os.path.exists(self.SETTINGS_FILE):
                 os.remove(self.SETTINGS_FILE)
@@ -67,6 +82,7 @@ class SettingsApplier:
             self.tdp_scale = self.gui_components['tdp_scale']
             self.pbo_curve_scale = self.gui_components['pbo_curve_scale']
             self.epb_combobox = self.gui_components['epb_combobox']
+            self.settings_window = self.gui_components['settings_window']
             self.apply_on_boot_checkbutton = self.gui_components['apply_on_boot_checkbutton']
         except KeyError as e:
             self.logger.error(f"Error setting up apply_settings gui_components: Component {e} not found")
@@ -95,7 +111,7 @@ class SettingsApplier:
 
     def update_checkbutton_sensitivity(self):
         try:
-            if self.settings_applied:
+            if self.settings_applied or self.settings_applied_on_boot:
                 self.apply_on_boot_checkbutton.set_sensitive(True)
             else:
                 self.apply_on_boot_checkbutton.set_sensitive(False)
@@ -224,7 +240,6 @@ class SettingsApplier:
             self.logger.info("Command apply script created successfully in /tmp/")
 
             return tmp_script_path
-
         except Exception as e:
             self.logger.error(f"Error creating command apply script: {e}")
             return None
@@ -250,8 +265,8 @@ class SettingsApplier:
 
     def create_systemd_service(self):
         try:
-            apply_script_path = self.create_apply_script()
-            if not apply_script_path:
+            tmp_script_path = self.create_apply_script()
+            if not tmp_script_path:
                 raise Exception("Failed to create command apply script")
 
             service_content = f"""[Unit]
@@ -267,8 +282,6 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 """
 
-            service_path = "/etc/systemd/system/clockspeeds.service"
-
             # Write the service content to a temporary file
             tmp_service_path = "/tmp/clockspeeds.service"
             with open(tmp_service_path, 'w') as f:
@@ -276,24 +289,28 @@ WantedBy=multi-user.target
 
             # Combine the commands for moving the files and setting up the systemd service
             command = (
-                f'mv {tmp_service_path} {service_path} && '
-                f'mv {apply_script_path} /usr/local/bin/apply_clockspeeds_settings.sh && '
-                f'chmod +x /usr/local/bin/apply_clockspeeds_settings.sh && '
+                f'mv {tmp_service_path} {self.SERVICE_PATH} && '
+                f'mv {tmp_script_path} {self.APPLY_SCRIPT_PATH} && '
+                f'chmod +x {self.APPLY_SCRIPT_PATH} && '
                 'systemctl daemon-reload && '
                 'systemctl enable clockspeeds.service && '
-                'systemctl start clockspeeds.service'
-            )
+                'systemctl start clockspeeds.service')
 
             # Define success and failure callbacks
             def success_callback():
                 self.logger.info("Systemd service created and started.")
                 self.global_state.previous_boot_checkbutton_state = True
-                self.apply_on_boot_checkbutton.set_sensitive(True)
+                self.update_checkbutton_sensitivity()
+                self.created_systemd_info_window()
 
             def failure_callback(error):
-                self.logger.error(f"Failed to create systemd service: {error}")
-                self.revert_checkbutton_state()
-                self.apply_on_boot_checkbutton.set_sensitive(True)
+                if error == 'canceled':
+                    self.logger.info("User canceled to create systemd service.")
+                    self.revert_checkbutton_state()
+                    self.update_checkbutton_sensitivity()
+                else:
+                    self.logger.error(f"Failed to create systemd service: {error}")
+
 
             # Run the combined command with elevated privileges
             self.privileged_actions.run_pkexec_command(command, success_callback=success_callback, failure_callback=failure_callback)
@@ -301,27 +318,33 @@ WantedBy=multi-user.target
         except Exception as e:
             self.logger.error(f"Error creating systemd service: {e}")
             self.revert_checkbutton_state()
-            self.apply_on_boot_checkbutton.set_sensitive(True)
+            self.update_checkbutton_sensitivity()
 
     def remove_systemd_service(self):
         try:
             command = (
-                "rm /usr/local/bin/apply_clockspeeds_settings.sh && "
-                "systemctl stop clockspeeds.service && "
-                "systemctl disable clockspeeds.service && "
-                "rm /etc/systemd/system/clockspeeds.service && "
-                "systemctl daemon-reload")
+                'systemctl stop clockspeeds.service && '
+                'systemctl disable clockspeeds.service && '
+                f'rm {self.APPLY_SCRIPT_PATH} && '
+                f'rm {self.SERVICE_PATH} && '
+                'systemctl daemon-reload')
 
             # Define success and failure callbacks
             def success_callback():
                 self.logger.info("Systemd service removed.")
                 self.global_state.previous_boot_checkbutton_state = False
-                self.apply_on_boot_checkbutton.set_sensitive(True)
+                self.settings_applied_on_boot = False
+                self.update_checkbutton_sensitivity()
+                self.removed_systemd_info_window()
 
             def failure_callback(error):
-                self.logger.error(f"Failed to remove systemd service: {error}")
-                self.revert_checkbutton_state()
-                self.apply_on_boot_checkbutton.set_sensitive(True)
+                if error == 'canceled':
+                    self.logger.info("User canceled to remove systemd service.")
+                    self.revert_checkbutton_state()
+                    self.update_checkbutton_sensitivity()
+                else:
+                    self.logger.error(f"Failed to remove systemd service: {error}")
+
 
             # Run the command with elevated privileges
             self.privileged_actions.run_pkexec_command(command, success_callback=success_callback, failure_callback=failure_callback)
@@ -329,8 +352,48 @@ WantedBy=multi-user.target
         except Exception as e:
             self.logger.error(f"Error removing systemd service: {e}")
             self.revert_checkbutton_state()
-            self.apply_on_boot_checkbutton.set_sensitive(True)
+            self.update_checkbutton_sensitivity()
 
-if __name__ == "__main__":
-    applier = SettingsApplier(logger, gui_components, cpu_file_search, privileged_actions)
-    applier.apply_all_settings()
+    def created_systemd_info_window(self):
+        # Show the information dialog for successfully creating the systemd service and script
+        try:
+            info_window = self.widget_factory.create_window("Information", self.settings_window, 300, 50)
+            info_box = self.widget_factory.create_box(info_window)
+            info_label = self.widget_factory.create_label(
+                info_box,
+                "Successfully created systemd service and script",
+                margin_start=10, margin_end=10, margin_top=10, margin_bottom=10)
+
+            def on_destroy(widget):
+                info_window.close()
+
+            info_button = self.widget_factory.create_button(
+                info_box, "OK", margin_start=86, margin_end=86, margin_bottom=10)
+            info_button.connect("clicked", on_destroy)
+            info_window.connect("close-request", on_destroy)
+
+            info_window.present()
+        except Exception as e:
+            self.logger.error(f"Error showing created systemd service info window: {e}")
+
+    def removed_systemd_info_window(self):
+        # Show the information dialog for successfully removing the systemd service and script
+        try:
+            info_window = self.widget_factory.create_window("Information", self.settings_window, 300, 50)
+            info_box = self.widget_factory.create_box(info_window)
+            info_label = self.widget_factory.create_label(
+                info_box,
+                "Successfully removed systemd service and script",
+                margin_start=10, margin_end=10, margin_top=10, margin_bottom=10)
+
+            def on_destroy(widget):
+                info_window.close()
+
+            info_button = self.widget_factory.create_button(
+                info_box, "OK", margin_start=89, margin_end=89, margin_bottom=10)
+            info_button.connect("clicked", on_destroy)
+            info_window.connect("close-request", on_destroy)
+
+            info_window.present()
+        except Exception as e:
+            self.logger.error(f"Error showing removed systemd service info window: {e}")

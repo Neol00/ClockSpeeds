@@ -47,7 +47,7 @@ class SettingsWindow:
             self.settings_window = self.widget_factory.create_window("Settings", None, 200, 200)
             self.settings_window.connect("close-request", self.close_settings_window)
         except Exception as e:
-            self.logger.error(f"Error setting up main settings window: {e}")
+            self.logger.error(f"Error setting up settings window: {e}")
 
     def open_settings_window(self, widget=None, data=None):
         # Open the settings window
@@ -69,7 +69,7 @@ class SettingsWindow:
         try:
             self.main_settings_box = self.widget_factory.create_box(self.settings_window)
         except Exception as e:
-            self.logger.error(f"Error setting up main settings box: {e}")
+            self.logger.error(f"Error setting up settings box: {e}")
 
     def create_settings_notebook(self):
         # Create the settings notebook
@@ -98,7 +98,7 @@ class SettingsWindow:
 
             # Create the info button for the Disable Scale Limits checkbutton
             info_button_scale = self.widget_factory.create_info_button(
-                general_fixed, self.show_scale_info_window, x=160, y=10)
+                general_fixed, self.scale_info_window, x=160, y=10)
             
             # Create the Sync Scales checkbutton
             self.sync_scales_checkbutton = self.widget_factory.create_checkbutton(
@@ -106,7 +106,7 @@ class SettingsWindow:
 
             # Create the info button for the Sync Scales checkbutton
             info_button_sync = self.widget_factory.create_info_button(
-                general_fixed, self.show_sync_info_window, x=160, y=40)
+                general_fixed, self.sync_info_window, x=160, y=40)
 
             # Create the MHz to GHz toggle checkbutton
             self.mhz_to_ghz_checkbutton = self.widget_factory.create_checkbutton(
@@ -114,7 +114,7 @@ class SettingsWindow:
 
             # Create the info button for the Sync Scales checkbutton
             info_button_mhz_to_ghz = self.widget_factory.create_info_button(
-                general_fixed, self.show_mhz_to_ghz_info_window, x=160, y=70)
+                general_fixed, self.mhz_to_ghz_info_window, x=160, y=70)
 
             # Create the Apply On Boot checkbutton
             self.apply_on_boot_checkbutton = self.widget_factory.create_checkbutton(
@@ -122,7 +122,7 @@ class SettingsWindow:
 
             # Create the info button for the Apply On Boot checkbutton
             info_button_apply_boot = self.widget_factory.create_info_button(
-                general_fixed, self.show_apply_boot_info_window, x=160, y=100)
+                general_fixed, self.apply_boot_info_window, x=160, y=100)
 
             # Create the update interval label and spinbutton
             interval_label = self.widget_factory.create_label(
@@ -144,8 +144,9 @@ class SettingsWindow:
             self.logger.error(f"Error setting up settings window GUI: {e}")
 
     def add_settings_widgets_to_gui_components(self):
-        # Add the settings widgets to the GUI components dictionary
+        # Add the settings widgets to the gui_components dictionary
         try:
+            self.gui_components['settings_window'] = self.settings_window
             self.gui_components['disable_scale_limits_checkbutton'] = self.disable_scale_limits_checkbutton
             self.gui_components['sync_scales_checkbutton'] = self.sync_scales_checkbutton
             self.gui_components['apply_on_boot_checkbutton'] = self.apply_on_boot_checkbutton
@@ -153,110 +154,97 @@ class SettingsWindow:
         except Exception as e:
             self.logger.error(f"Error adding settings_window widgets to gui_components: {e}")
 
-    def show_scale_info_window(self, widget):
-        # Show the information dialog for the disable scale limits checkbutton
+    def scale_info_window(self, widget):
+        # Show the information dialog for the Disable Scale Limits checkbutton
         try:
-            scale_info_window = self.widget_factory.create_window("Information", self.settings_window, 300, 100)
-
-            scale_info_box = self.widget_factory.create_box(scale_info_window)
-
-            scale_info_label = self.widget_factory.create_label(
-                scale_info_box,
+            info_window = self.widget_factory.create_window("Information", self.settings_window, 300, 50)
+            info_box = self.widget_factory.create_box(info_window)
+            info_label = self.widget_factory.create_label(
+                info_box,
                 "Enabling this option allows setting CPU speeds beyond standard limits.\n"
                 "Note: values outside your CPU's allowed range may not work as expected.",
                 margin_start=10, margin_end=10, margin_top=10, margin_bottom=10)
 
             def on_destroy(widget):
-                scale_info_window.close()
+                info_window.close()
 
-            scale_info_button = self.widget_factory.create_button(
-                scale_info_box, "OK", margin_start=164, margin_end=164, margin_bottom=10)
-            scale_info_button.connect("clicked", on_destroy)
+            info_button = self.widget_factory.create_button(
+                info_box, "OK", margin_start=164, margin_end=164, margin_bottom=10)
+            info_button.connect("clicked", on_destroy)
+            info_window.connect("close-request", on_destroy)
 
-            scale_info_window.connect("close-request", on_destroy)
-
-            scale_info_window.present()
+            info_window.present()
         except Exception as e:
-            self.logger.error(f"Error showing scale info dialog: {e}")
+            self.logger.error(f"Error showing Disable Scale Limits info window: {e}")
 
-    def show_sync_info_window(self, widget):
-        # Show the information dialog for the sync scales checkbutton
+    def sync_info_window(self, widget):
+        # Show the information dialog for the Sync All Scales checkbutton
         try:
-            sync_info_window = self.widget_factory.create_window("Information", self.settings_window, 300, 50)
-
-            sync_info_box = self.widget_factory.create_box(sync_info_window)
-
-            sync_info_label = self.widget_factory.create_label(
-                sync_info_box,
+            info_window = self.widget_factory.create_window("Information", self.settings_window, 300, 50)
+            info_box = self.widget_factory.create_box(info_window)
+            info_label = self.widget_factory.create_label(
+                info_box,
                 "Enabling this option will synchronize the minimum and maximum CPU\n"
                 "frequency scales across all threads.",
                 margin_start=10, margin_end=10, margin_top=10, margin_bottom=10)
 
             def on_destroy(widget):
-                sync_info_window.close()
+                info_window.close()
 
-            sync_info_button = self.widget_factory.create_button(
-                sync_info_box, "OK", margin_start=154, margin_end=154, margin_bottom=10)
-            sync_info_button.connect("clicked", on_destroy)
+            info_button = self.widget_factory.create_button(
+                info_box, "OK", margin_start=154, margin_end=154, margin_bottom=10)
+            info_button.connect("clicked", on_destroy)
+            info_window.connect("close-request", on_destroy)
 
-            sync_info_window.connect("close-request", on_destroy)
-
-            sync_info_window.present()
+            info_window.present()
         except Exception as e:
-            self.logger.error(f"Error showing sync info dialog: {e}")
+            self.logger.error(f"Error showing Sync All Scales info window: {e}")
 
-    def show_mhz_to_ghz_info_window(self, widget):
-        # Show the information dialog for the sync scales checkbutton
+    def mhz_to_ghz_info_window(self, widget):
+        # Show the information dialog for the MHz to GHz checkbutton
         try:
-            mhz_to_ghz_info_window = self.widget_factory.create_window("Information", self.settings_window, 300, 50)
-
-            mhz_to_ghz_info_box = self.widget_factory.create_box(mhz_to_ghz_info_window)
-
-            mhz_to_ghz_info_label = self.widget_factory.create_label(
-                mhz_to_ghz_info_box,
+            info_window = self.widget_factory.create_window("Information", self.settings_window, 300, 50)
+            info_box = self.widget_factory.create_box(info_window)
+            info_label = self.widget_factory.create_label(
+                info_box,
                 "Enabling this option will display labels in GHz instead of MHz",
                 margin_start=10, margin_end=10, margin_top=10, margin_bottom=10)
 
             def on_destroy(widget):
-                mhz_to_ghz_info_window.close()
+                info_window.close()
 
-            mhz_to_ghz_info_button = self.widget_factory.create_button(
-                mhz_to_ghz_info_box, "OK", margin_start=126, margin_end=126, margin_bottom=10)
-            mhz_to_ghz_info_button.connect("clicked", on_destroy)
+            info_button = self.widget_factory.create_button(
+                info_box, "OK", margin_start=126, margin_end=126, margin_bottom=10)
+            info_button.connect("clicked", on_destroy)
+            info_window.connect("close-request", on_destroy)
 
-            mhz_to_ghz_info_window.connect("close-request", on_destroy)
-
-            mhz_to_ghz_info_window.present()
+            info_window.present()
         except Exception as e:
-            self.logger.error(f"Error showing sync info dialog: {e}")
+            self.logger.error(f"Error showing MHz to GHz info window: {e}")
 
-    def show_apply_boot_info_window(self, widget):
-        # Show the information dialog for the apply on boot checkbutton
+    def apply_boot_info_window(self, widget):
+        # Show the information dialog for the Apply On Boot checkbutton
         try:
-            apply_boot_info_window = self.widget_factory.create_window("Information", self.settings_window, 300, 50)
-
-            apply_boot_info_box = self.widget_factory.create_box(apply_boot_info_window)
-
-            apply_boot_info_label = self.widget_factory.create_label(
-                apply_boot_info_box,
+            info_window = self.widget_factory.create_window("Information", self.settings_window, 300, 50)
+            info_box = self.widget_factory.create_box(info_window)
+            info_label = self.widget_factory.create_label(
+                info_box,
                 "Enabling this option will apply the settings you have specifically\n"
-                "changed on boot with a systemd service and a complimentary\n"
-                "script created in /usr/local/bin/apply_clockspeeds_settings.sh\n"
-                "Disabling this option will disable and delete those files",
+                "changed on boot with a systemd service and a complimentary script.\n"
+                "Disabling this option will disable and delete the files",
                 margin_start=10, margin_end=10, margin_top=10, margin_bottom=10)
 
             def on_destroy(widget):
-                apply_boot_info_window.close()
+                info_window.close()
 
-            apply_boot_info_button = self.widget_factory.create_button(
-                apply_boot_info_box, "OK", margin_start=133, margin_end=133, margin_bottom=10)
-            apply_boot_info_button.connect("clicked", on_destroy)
+            info_button = self.widget_factory.create_button(
+                info_box, "OK", margin_start=147, margin_end=147, margin_bottom=10)
+            info_button.connect("clicked", on_destroy)
+            info_window.connect("close-request", on_destroy)
 
-            apply_boot_info_window.connect("close-request", on_destroy)
-
-            apply_boot_info_window.present()
+            info_window.present()
         except Exception as e:
-            self.logger.error(f"Error showing sync info dialog: {e}")
+            self.logger.error(f"Error showing Apply On Boot info window: {e}")
 
     def on_mhz_to_ghz_toggle(self, checkbutton):
         self.global_state.display_ghz = checkbutton.get_active()

@@ -1,8 +1,8 @@
-# ClockSpeeds CPU Monitoring and Control Application for Linux
+# ClockSpeeds CPU Monitoring and Control Application
 
 <img src="icon/ClockSpeeds-Icon-hi.png" alt="Sample Image" width="300" height="300">
 
-This is a GUI application that allows you to monitor and control various aspects of the CPU on Linux systems.
+ClockSpeeds is a GUI application that allows you to monitor and control various aspects of the CPU on Linux systems.
 This project is in early development so some things might not work as expected.
 
 ## Features

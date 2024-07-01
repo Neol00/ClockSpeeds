@@ -77,7 +77,7 @@ class WidgetFactory:
         # Create a new tab for the Gtk.Notebook widget
         try:
             scrolled_window = Gtk.ScrolledWindow()
-            scrolled_window.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+            scrolled_window.set_policy(Gtk.PolicyType.EXTERNAL, Gtk.PolicyType.EXTERNAL)
             scrolled_window.set_min_content_width(535)
             scrolled_window.set_min_content_height(400)
 

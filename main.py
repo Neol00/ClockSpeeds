@@ -74,15 +74,14 @@ class ClockSpeedsApp(Gtk.Application):
     def do_activate(self):
         # Create the main application window
         try:
-            if not hasattr(self, 'window'):
-                self.window = Gtk.ApplicationWindow(application=self)
-                self.window.set_title("ClockSpeeds")
-                self.window.set_default_size(535, 400)
-                self.window.set_resizable(False)
-                self.window.connect("close-request", self.close_main_window)
-                self.window.present()
+            self.window = Gtk.ApplicationWindow(application=self)
+            self.window.set_title("ClockSpeeds")
+            self.window.set_default_size(535, 400)
+            self.window.set_resizable(False)
+            self.window.connect("close-request", self.close_main_window)
+            self.window.present()
 
-                self.call_main_methods()
+            self.call_main_methods()
         except Exception as e:
             self.logger.error(f"Error setting up main window: {e}")
 

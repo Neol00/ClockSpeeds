@@ -18,7 +18,7 @@
 
 import os
 import gi
-from gi.repository import GLib
+from gi.repository import Gtk, GLib
 
 class CPUManager:
     def __init__(self, config_manager, logger, global_state, gui_components, widget_factory, cpu_file_search, privileged_actions, settings_applier):
@@ -35,11 +35,16 @@ class CPUManager:
         self.monitor_task_id = None
         self.control_task_id = None
 
+        self.cpu_load_history = {i: [0] * 60 for i in range(self.cpu_file_search.thread_count)}
+
         # Load update interval from config or use default
         self.update_interval = float(config_manager.get_setting("Settings", "update_interval", "1.0"))
 
         # Read initial CPU statistics
         self.prev_stat = self.read_stat_file()
+
+        # Keep track of the previous loads to not update unnecessarily
+        self.prev_loads = {}
 
         # Schedule monitor tasks on startup
         self.schedule_monitor_tasks()
@@ -56,7 +61,7 @@ class CPUManager:
         self.average_progress_bar = None
         self.package_temp_entry = None
         self.current_governor_label = None
-        self.governor_combobox = None
+        self.governor_dropdown = None
         self.boost_checkbutton = None
         self.tdp_scale = None
         self.pbo_curve_scale = None
@@ -102,8 +107,8 @@ class CPUManager:
     def run_monitor_tasks(self):
         # Execute the monitor tasks periodically
         try:
+            self.update_cpu_load()
             self.update_clock_speeds()
-            self.update_load()
             self.read_package_temperature()
             self.get_current_governor()
             self.update_throttle()
@@ -137,23 +142,25 @@ class CPUManager:
         # Set up references to GUI components from the shared dictionary
         try:
             self.clock_labels = self.gui_components['clock_labels']
-            self.progress_bars = self.gui_components['progress_bars']
-            self.average_clock_entry = self.gui_components['average_clock_entry']
-            self.average_progress_bar = self.gui_components['average_progress_bar']
-            self.package_temp_entry = self.gui_components['package_temp_entry']
+            self.usage_labels = self.gui_components['usage_labels']
+            self.cpu_graphs = self.gui_components['cpu_graphs']
+            self.avg_usage_graph = self.gui_components['avg_usage_graph']
+            self.avg_usage_label = self.gui_components['avg_usage_label']
+            self.avg_clock_label = self.gui_components['avg_clock_label']
+            self.package_temp_label = self.gui_components['package_temp_label']
             self.current_governor_label = self.gui_components['current_governor_label']
             self.thermal_throttle_label = self.gui_components['thermal_throttle_label']
             self.cpu_max_min_checkbuttons = self.gui_components['cpu_max_min_checkbuttons']
             self.max_scales = self.gui_components['cpu_max_scales']
             self.min_scales = self.gui_components['cpu_min_scales']
             self.apply_max_min_button = self.gui_components['apply_max_min_button']
-            self.governor_combobox = self.gui_components['governor_combobox']
+            self.governor_dropdown = self.gui_components['governor_dropdown']
             self.boost_checkbutton = self.gui_components['boost_checkbutton']
             self.tdp_scale = self.gui_components['tdp_scale']
             self.apply_tdp_button = self.gui_components['apply_tdp_button']
             self.pbo_curve_scale = self.gui_components['pbo_curve_scale']
             self.apply_pbo_button = self.gui_components['apply_pbo_button']
-            self.epb_combobox = self.gui_components['epb_combobox']
+            self.epb_dropdown = self.gui_components['epb_dropdown']
         except KeyError as e:
             self.logger.error(f"Error setting up cpu_manager gui_components: Component {e} not found")
 
@@ -310,31 +317,35 @@ class CPUManager:
         # Update the clock speed labels in the GUI
         for i, speed in speeds:
             if i in self.clock_labels:
+                label = self.clock_labels[i]
                 if self.global_state.display_ghz:
                     display_speed = speed / 1000
                     unit = "GHz"
-                    self.clock_labels[i].set_text(f"{display_speed:.2f} {unit}")
+                    label.set_text(f"{display_speed:.2f} {unit}")
                 else:
                     display_speed = speed
                     unit = "MHz"
-                    self.clock_labels[i].set_text(f"{display_speed:.0f} {unit}")
+                    label.set_text(f"{display_speed:.0f} {unit}")
             else:
-                self.logger.error(f"No label found for thread {i}")
+                self.logger.warning(f"No clock label found for thread {i}")
 
     def update_average_speed(self, speeds):
         # Update the average clock speed label in the GUI
         if speeds:
             average_speed = sum(speed for _, speed in speeds) / len(speeds)
-            if self.global_state.display_ghz:
-                display_speed = average_speed / 1000
-                unit = "GHz"
-                self.average_clock_entry.set_text(f"{display_speed:.2f} {unit}")
+            if self.avg_clock_label is not None:
+                if self.global_state.display_ghz:
+                    display_speed = average_speed / 1000
+                    unit = "GHz"
+                    self.avg_clock_label.set_text(f"{display_speed:.2f} {unit}")
+                else:
+                    display_speed = average_speed
+                    unit = "MHz"
+                    self.avg_clock_label.set_text(f"{display_speed:.0f} {unit}")
             else:
-                display_speed = average_speed
-                unit = "MHz"
-                self.average_clock_entry.set_text(f"{display_speed:.0f} {unit}")
+                self.logger.warning("Average clock label not found in GUI components")
         else:
-            self.logger.error("No valid CPU clock speeds found")
+            self.logger.warning("No valid CPU clock speeds found")
 
     def update_clock_speeds(self):
         # Update the clock speeds of all CPU threads
@@ -349,79 +360,43 @@ class CPUManager:
         # Read the CPU statistics from the stat file
         stat_file_path = self.cpu_file_search.proc_files['stat']
         if not stat_file_path:
-            self.logger.error("Stat file not found.")
+            print("Stat file not found.")
             return None
 
-        # Open the stat file and read its lines
-        with open(stat_file_path, 'r') as file:
-            lines = file.readlines()
-
         cpu_stats = []  # List to store the CPU statistics
-        for line in lines:
-            if line.startswith('cpu'):
-                fields = line.split()
-                if len(fields) >= 5:
-                    cpu_id = fields[0]  # Extract CPU ID
-                    user = int(fields[1])  # Extract user time
-                    nice = int(fields[2])  # Extract nice time
-                    system = int(fields[3])  # Extract system time
-                    idle = int(fields[4])  # Extract idle time
-                    cpu_stats.append((cpu_id, user, nice, system, idle))
+        with open(stat_file_path, 'r') as file:
+            for line in file:
+                if line.startswith('cpu'):
+                    fields = line.split()
+                    if len(fields) >= 5:
+                        cpu_stats.append((fields[0], int(fields[1]), int(fields[2]), int(fields[3]), int(fields[4])))
 
         return cpu_stats
 
     def calculate_load(self, prev_stat, curr_stat):
         # Calculate the CPU load based on previous and current statistics
-        loads = {}  # Dictionary to store the load percentages for each CPU
+        def calc_load(data):
+            loads = {}  # Dictionary to store the load percentages for each CPU
+            (cpu_id, prev_user, prev_nice, prev_system, prev_idle), \
+            (_, curr_user, curr_nice, curr_system, curr_idle) = data
 
-        for (cpu_id, prev_user, prev_nice, prev_system, prev_idle), \
-            (_, curr_user, curr_nice, curr_system, curr_idle) in zip(prev_stat, curr_stat):
-
-            # Calculate the previous and current total times
-            prev_total = prev_user + prev_nice + prev_system + prev_idle
-            curr_total = curr_user + curr_nice + curr_system + curr_idle
-
-            # Calculate the differences in total and idle times
-            total_diff = curr_total - prev_total
+            total_diff = (curr_user + curr_nice + curr_system + curr_idle) - \
+                         (prev_user + prev_nice + prev_system + prev_idle)
             idle_diff = curr_idle - prev_idle
 
-            if total_diff != 0:
-                # Calculate the load percentage
-                load_percentage = 100 * (total_diff - idle_diff) / total_diff
-                loads[cpu_id] = load_percentage
+            # Return a load value of 0 if there is no difference, implying no load change
+            if total_diff:
+                return (cpu_id, 100 * (total_diff - idle_diff) / total_diff)
+            else:
+                return (cpu_id, 0.0)
 
-        return loads
+        # Use map to apply calc_load function across the zipped lists of previous and current stats
+        loads = map(calc_load, zip(prev_stat, curr_stat))
 
-    def update_average_load(self, loads):
-        try:
-            # Calculate and update the average CPU load
-            average_load = sum(loads.values()) / len(loads)  # Calculate the average load
-            load_percentage = min(100, average_load)  # Ensure the load percentage does not exceed 100%
+        # Convert the map result to a dictionary
+        return dict(loads)
 
-            # Update the progress bar and the label if the load percentage has changed
-            progress_bar, percentage_label = self.average_progress_bar
-            if int(progress_bar.get_fraction() * 100) != int(load_percentage):
-                progress_bar.set_fraction(load_percentage / 100.0)
-                percentage_label.set_text(f"{int(load_percentage)}%")
-        except Exception as e:
-            self.logger.error(f"Error updating average load: {e}")
-
-    def update_thread_loads(self, loads):
-        try:
-            # Update the load for each CPU thread
-            for cpu_id, load in loads.items():
-                if cpu_id.startswith('cpu') and cpu_id != 'cpu':  # Skip the aggregated 'cpu' line
-                    thread_index = int(cpu_id.replace('cpu', ''))
-                    if thread_index in self.progress_bars:
-                        # Update the progress bar and the label if the load has changed
-                        progress_bar, percentage_label = self.progress_bars[thread_index]
-                        if int(progress_bar.get_fraction() * 100) != int(load):
-                            progress_bar.set_fraction(load / 100.0)
-                            percentage_label.set_text(f"{int(load)}%")
-        except Exception as e:
-            self.logger.error(f"Error updating thread loads: {e}")
-
-    def update_load(self):
+    def update_cpu_load(self):
         # Update the CPU load for all threads
         try:
             curr_stat = self.read_stat_file()  # Read the current CPU statistics
@@ -430,13 +405,49 @@ class CPUManager:
 
             # Calculate the load based on the previous and current statistics
             loads = self.calculate_load(self.prev_stat, curr_stat)
-            if loads:
-                self.update_average_load(loads)  # Update the average load
-                self.update_thread_loads(loads)  # Update the load for each thread
+            if loads and loads != self.prev_loads:
+                self.update_load_history(loads)
+                self.update_load_gui(loads)
+                self.prev_loads = loads
+
             # Update the previous statistics
             self.prev_stat = curr_stat
         except Exception as e:
-            self.logger.error(f"Error updating average load: {e}")
+            self.logger.error(f"Error updating CPU load: {e}")
+
+    def update_load_history(self, loads):
+        for cpu_id, load in loads.items():
+            if cpu_id.startswith('cpu') and cpu_id != 'cpu':
+                thread_index = int(cpu_id[3:])
+                if thread_index in self.cpu_load_history:
+                    self.cpu_load_history[thread_index].pop(0)
+                    self.cpu_load_history[thread_index].append(load)
+
+    def update_load_gui(self, loads):
+        try:
+            total_load = 0
+            count = 0
+            for cpu_id, load in loads.items():
+                if cpu_id.startswith('cpu') and cpu_id != 'cpu':
+                    thread_index = int(cpu_id[3:])
+                    if thread_index in self.cpu_graphs:
+                        self.cpu_graphs[thread_index].update(load / 100)
+                    
+                    if thread_index in self.usage_labels:
+                        self.usage_labels[thread_index].set_text(f"{load:.1f}%")
+                    
+                    total_load += load
+                    count += 1
+
+            if count > 0:
+                avg_load = total_load / count
+                if self.avg_usage_graph:
+                    self.avg_usage_graph.update(avg_load / 100)
+                
+                if self.avg_usage_label:
+                    self.avg_usage_label.set_text(f"{avg_load:.1f}%")
+        except Exception as e:
+            self.logger.error(f"Error updating load GUI: {e}")
 
     def read_and_parse_temperature(self):
         # Read and parse the CPU package temperature
@@ -460,8 +471,14 @@ class CPUManager:
         try:
             temp_str, temp_celsius = self.read_and_parse_temperature()
             if temp_celsius is not None:
-                self.package_temp_entry.set_text(f"{int(temp_celsius)} °C")
+                package_temp_label = self.package_temp_label
+                if package_temp_label is not None:
+                    package_temp_label.set_text(f"{int(temp_celsius)} °C")
+                else:
+                    self.logger.warning("Package temperature not found in GUI components")
                 return temp_celsius
+            else:
+                self.logger.warning("Unable to read package temperature")
         except Exception as e:
             self.logger.error(f"Error reading package temperature: {e}")
         return None
@@ -515,32 +532,31 @@ class CPUManager:
         except Exception as e:
             self.logger.error(f"Error updating CPU governor: {e}")
 
-    def update_governor_combobox(self):
-        # Update the governor combobox with available governors
-        model = self.governor_combobox.get_model()
-        model.clear()
+    def update_governor_dropdown(self):
+        # Update the governor drop down with available governors
+        try:
+            # Gather all unique governors from available governor files
+            self.global_state.unique_governors.clear()
+            for i in range(self.cpu_file_search.thread_count):
+                available_governors_file = self.cpu_file_search.cpu_files['available_governors_files'].get(i)
+                if available_governors_file and os.path.exists(available_governors_file):
+                    try:
+                        with open(available_governors_file, 'r') as file:
+                            governors = file.read().strip().split()
+                            self.global_state.unique_governors.update(governors)
+                    except Exception as e:
+                        self.logger.error(f"Error reading available governors from {available_governors_file}: {e}")
 
-        # Add the first entry as a placeholder
-        model.append(["Select Governor"])
+            # Create the list of governors with the placeholder at the beginning
+            governors_list = ["Select Governor"] + sorted(self.global_state.unique_governors)
 
-        # Gather all unique governors from available governor files
-        self.global_state.unique_governors = set()
-        for i in range(self.cpu_file_search.thread_count):
-            available_governors_file = self.cpu_file_search.cpu_files['available_governors_files'].get(i)
-            if available_governors_file and os.path.exists(available_governors_file):
-                try:
-                    with open(available_governors_file, 'r') as file:
-                        governors = file.read().strip().split()
-                        self.global_state.unique_governors.update(governors)
-                except Exception as e:
-                    self.logger.error(f"Error reading available governors from {available_governors_file}: {e}")
-
-        # Populate the combobox with the available governors, sorted alphabetically
-        for governor in sorted(self.global_state.unique_governors):
-            model.append([governor])
-
-        # Set the active index to 0, which is the "Select Governor" placeholder
-        self.governor_combobox.set_active(0)
+            # Update the Gtk.StringList model for the dropdown
+            if hasattr(self, 'governor_dropdown') and self.governor_dropdown:
+                new_store = Gtk.StringList.new(governors_list)
+                self.governor_dropdown.set_model(new_store)
+                self.governor_dropdown.set_selected(0)
+        except Exception as e:
+            self.logger.error("Failed to update governor dropdown: %s", e)
 
     def find_boost_type(self):
         # Determine which boost files are correct for your CPU type
@@ -709,18 +725,18 @@ class CPUManager:
         except Exception as e:
             self.logger.error(f"Error showing speed limits info dialog: {e}")
 
-    def set_cpu_governor(self, combobox):
-        # Handle the change of CPU governor from the combobox and set it
+    def set_cpu_governor(self, dropdown, param):
+        # Handle the change of CPU governor from the drop down and set it
         try:
-            def set_governor_combobox_sensitivity():
-                self.governor_combobox.set_sensitive(False)
+            def set_governor_dropdown_sensitivity():
+                self.governor_dropdown.set_sensitive(False)
 
             def get_selected_governor():
-                # Retrieve the selected governor from the combobox
-                model = combobox.get_model()
-                active_iter = combobox.get_active_iter()
-                if active_iter is not None:
-                    return model[active_iter][0]
+                # Retrieve the selected governor from the drop down
+                selected = dropdown.get_selected()
+                model = dropdown.get_model()
+                if selected >= 0:
+                    return model.get_string(selected)
                 return None
 
             def get_command_list(governor):
@@ -735,7 +751,7 @@ class CPUManager:
             def success_callback():
                 # Handle successful execution of pkexec command
                 self.logger.info(f"Successfully set governor to {selected_governor}")
-                self.governor_combobox.set_sensitive(True)
+                self.governor_dropdown.set_sensitive(True)
                 try:
                     self.settings_applier.applied_settings["governor"] = selected_governor
                     self.settings_applier.save_settings()
@@ -746,16 +762,16 @@ class CPUManager:
                 # Handle failures from pkexec command
                 if error == 'canceled':
                     self.logger.info("User canceled the governor change pkexec prompt.")
-                    GLib.idle_add(lambda: combobox.set_active(0))
+                    GLib.idle_add(lambda: dropdown.set_selected(0))
                 else:
                     self.logger.error(f"Failed to set CPU governor: {error}")
-                self.governor_combobox.set_sensitive(True)
+                self.governor_dropdown.set_sensitive(True)
 
             selected_governor = get_selected_governor()
             if selected_governor == "Select Governor" or selected_governor is None:
-                return  # Do nothing if placeholder or no selection is made
+                return   # Do nothing if placeholder or no selection is made
 
-            set_governor_combobox_sensitivity()
+            set_governor_dropdown_sensitivity()
 
             if selected_governor in self.valid_governors:
                 self.logger.info(f"Setting CPU governor to: {selected_governor}")
@@ -767,15 +783,15 @@ class CPUManager:
                     self.privileged_actions.run_pkexec_command(full_command, success_callback=success_callback, failure_callback=failure_callback)
                 else:
                     self.logger.error("No CPU governor files found to apply clock speed limits.")
-                    self.governor_combobox.set_sensitive(True)
+                    self.governor_dropdown.set_sensitive(True)
             else:
                 self.logger.error(f"Invalid CPU governor selected: {selected_governor}")
-                self.governor_combobox.set_sensitive(True)
-                GLib.idle_add(lambda: combobox.set_active(0))
+                self.governor_dropdown.set_sensitive(True)
+                GLib.idle_add(lambda: dropdown.set_selected(0))
 
         except Exception as e:
             self.logger.error(f"An error occurred while handling CPU governor change: {e}")
-            self.governor_combobox.set_sensitive(True)
+            self.governor_dropdown.set_sensitive(True)
 
     def toggle_boost(self, widget=None):
         # Toggle the CPU boost clock on or off
@@ -1034,17 +1050,17 @@ class CPUManager:
             self.apply_pbo_button.set_sensitive(True)
             return False
 
-    def set_energy_perf_bias(self, combobox):
+    def set_energy_perf_bias(self, dropdown, param):
         try:
             def set_epb_sensitivity():
-                self.epb_combobox.set_sensitive(False)
+                self.epb_dropdown.set_sensitive(False)
 
             def get_selected_bias():
-                # Retrieve the selected EPB from the combobox
-                model = combobox.get_model()
-                active_iter = combobox.get_active_iter()
-                if active_iter is not None:
-                    return model[active_iter][0]
+                # Retrieve the selected EPB from the drop down
+                selected = dropdown.get_selected()
+                model = dropdown.get_model()
+                if selected >= 0:
+                    return model.get_string(selected)
                 return None
 
             def get_command_list(bias_value):
@@ -1060,7 +1076,7 @@ class CPUManager:
             def success_callback():
                 # Handle successful execution of pkexec command
                 self.logger.info(f"Successfully set Intel EPB to {selected_bias}")
-                self.epb_combobox.set_sensitive(True)
+                self.epb_dropdown.set_sensitive(True)
                 try:
                     self.settings_applier.applied_settings["epb"] = selected_bias
                     self.settings_applier.save_settings()
@@ -1071,10 +1087,10 @@ class CPUManager:
                 # Handle failures from pkexec command
                 if error == 'canceled':
                     self.logger.info("User canceled the Intel EPB change pkexec prompt.")
-                    GLib.idle_add(lambda: combobox.set_active(0))
+                    GLib.idle_add(lambda: dropdown.set_selected(0))
                 else:
                     self.logger.error(f"Failed to set Intel EPB: {error}")
-                self.epb_combobox.set_sensitive(True)
+                self.epb_dropdown.set_sensitive(True)
 
             selected_bias = get_selected_bias()
             if selected_bias == "Select Energy Performance Bias" or selected_bias is None:
@@ -1095,12 +1111,12 @@ class CPUManager:
                     self.privileged_actions.run_pkexec_command(full_command, success_callback=success_callback, failure_callback=failure_callback)
                 else:
                     self.logger.error("No Intel EPB files found to apply the bias value.")
-                    self.epb_combobox.set_sensitive(True)
+                    self.epb_dropdown.set_sensitive(True)
             else:
                 self.logger.error(f"Invalid Intel EPB value selected: {selected_bias}")
-                GLib.idle_add(lambda: combobox.set_active(0))
-                self.epb_combobox.set_sensitive(True)
+                GLib.idle_add(lambda: dropdown.set_selected(0))
+                self.epb_dropdown.set_sensitive(True)
 
         except Exception as e:
-            self.epb_combobox.set_sensitive(True)
+            self.epb_dropdown.set_sensitive(True)
             self.logger.error(f"An error occurred while handling Intel EPB change: {e}")

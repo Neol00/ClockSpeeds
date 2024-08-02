@@ -123,35 +123,6 @@ class SettingsApplier:
         self.apply_on_boot_checkbutton.set_active(self.global_state.previous_boot_checkbutton_state)
         self.global_state.ignore_boot_checkbutton_toggle = False
 
-    def apply_ui_settings(self):
-        for i, value in self.settings.get("min_speeds", {}).items():
-            self.min_scales[int(i)].set_value(value)
-        for i, value in self.settings.get("max_speeds", {}).items():
-            self.max_scales[int(i)].set_value(value)
-        for i, value in self.settings.get("checked_threads", {}).items():
-            self.checked_threads[int(i)].set_active(value)
-
-        governor = self.settings.get("governor")
-        if governor:
-            model = self.governor_combobox.get_model()
-            for i, row in enumerate(model):
-                if row[0] == governor:
-                    self.governor_combobox.set_active(i)
-                    break
-
-        self.boost_checkbutton.set_active(self.settings.get("boost", False))
-        self.tdp_scale.set_value(self.settings.get("tdp", 0))
-        self.pbo_curve_scale.set_value(self.settings.get("pbo_offset", 0))
-
-        epb = self.settings.get("epb")
-        if epb:
-            model = self.epb_combobox.get_model()
-            for i, row in enumerate(model):
-                if row[0] == epb:
-                    self.epb_combobox.set_active(i)
-                    break
-        self.logger.info("Command settings loaded into UI.")
-
     def create_apply_script(self):
         try:
             self.load_settings()  # Load settings before creating the script

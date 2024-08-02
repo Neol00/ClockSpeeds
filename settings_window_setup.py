@@ -130,16 +130,16 @@ class SettingsWindow:
             interval_spinbutton = self.widget_factory.create_spinbutton(
                 general_fixed, self.cpu_manager.update_interval, 0.1, 20.0, 0.1, 1, 0.1, 1, self.on_interval_changed, x=40, y=155, margin_bottom=10)
 
-            # Create the CSS combobox
+            # Create the CSS drop down
             css_values = self.css_manager.get_installed_gtk_css()
-            css_combobox = self.widget_factory.create_combobox(
+            css_dropdown = self.widget_factory.create_dropdown(
                 self.css_tab, css_values, self.on_css_change, x=0, y=0, margin_start=10, margin_end=10, margin_top=20, margin_bottom=20, hexpand=True, vexpand=True)
 
             # Set the active CSS theme
             saved_css = self.css_manager.load_css_config()
             if saved_css in css_values:
                 active_index = css_values.index(saved_css)
-                css_combobox.set_active(active_index)
+                css_dropdown.set_active(active_index)
         except Exception as e:
             self.logger.error(f"Error setting up settings window GUI: {e}")
 
@@ -274,7 +274,7 @@ class SettingsWindow:
         self.cpu_manager.set_update_interval(new_interval)
 
     def on_css_change(self, combo):
-        # Handle the change of CSS theme from the combobox
+        # Handle the change of CSS theme from the dropdown
         try:
             model = combo.get_model()
             iter = combo.get_active_iter()

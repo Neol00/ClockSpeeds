@@ -73,7 +73,7 @@ class CssManager:
         }
 
         scale {
-            min-width: 320px;
+            min-width: 185px;
         }
 
         scale slider {
@@ -100,19 +100,36 @@ class CssManager:
             color: grey;
         }
 
-        combobox * {
+        dropdown * {
             border-radius: 8px;
         }
 
-        progressbar trough {
-            min-height: 15px;
-            min-width: 80px;
-            border-radius: 4px;
+        .small-header {
+            font-weight: bold;
+            font-size: 12px;
         }
 
-        progressbar progress {
-            min-height: 15px;
-            border-radius: 4px;
+        .medium-header {
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .thick-header {
+            font-weight: bold;
+            font-size: 16px;
+        }
+
+        .small-label
+        .package_temp_label {
+            font-size: 12px;
+        }
+
+        .medium-label{
+            font-size: 14px;
+        }
+
+        .thick-label{
+            font-size: 16px;
         }
     """
 

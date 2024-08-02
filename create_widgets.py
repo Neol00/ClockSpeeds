@@ -18,7 +18,7 @@
 
 import gi
 gi.require_version('Gtk', '4.0')
-from gi.repository import Gtk
+from gi.repository import Gtk, GLib
 
 class WidgetFactory:
     def __init__(self, logger, global_state):
@@ -79,7 +79,7 @@ class WidgetFactory:
             scrolled_window = Gtk.ScrolledWindow()
             scrolled_window.set_policy(Gtk.PolicyType.EXTERNAL, Gtk.PolicyType.EXTERNAL)
             scrolled_window.set_min_content_width(535)
-            scrolled_window.set_min_content_height(400)
+            scrolled_window.set_min_content_height(535)
 
             tab = Gtk.Box()
             tab.set_orientation(Gtk.Orientation.VERTICAL)
@@ -151,60 +151,33 @@ class WidgetFactory:
             self.logger.error("Failed to create entry: %s", e)
             return None
 
-    def create_progressbar(self, container, x=0, y=0, **kwargs):
-        # Create a new Gtk.ProgressBar widget and add it to the container
-        try:
-            # Create a label for "CPU Load"
-            cpu_load_label = Gtk.Label(label="CPU Load")
-            self._set_margins(cpu_load_label, **kwargs)
-            self._attach_widget(container, cpu_load_label, x + 8, y + 6)
-
-            # Create an Overlay to hold the progress bar and the label
-            overlay = Gtk.Overlay()
-
-            # Create a ProgressBar
-            progress_bar = Gtk.ProgressBar()
-            self._set_margins(progress_bar, **kwargs)
-            overlay.set_child(progress_bar)
-
-            # Create a Label to show the percentage
-            percentage_label = Gtk.Label(label="0%")
-            percentage_label.set_halign(Gtk.Align.CENTER)
-            percentage_label.set_valign(Gtk.Align.CENTER)
-            overlay.add_overlay(percentage_label)
-
-            self._set_margins(overlay, **kwargs)
-            self._attach_widget(container, overlay, x, y + 26)  # Adjust y position for proper spacing
-
-            return progress_bar, percentage_label
-        except Exception as e:
-            self.logger.error("Failed to create ProgressBar: %s", e)
-            return None, None
-
     def create_scale(self, container, command, from_value, to_value, x=0, y=0, Negative=False, Frequency=False, **kwargs):
         # Create a new Gtk.Scale widget and add it to the container
         try:
             adjustment = Gtk.Adjustment(lower=from_value, upper=to_value, step_increment=1)
             scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=adjustment)
-            scale.set_digits(2 if Frequency and self.global_state.display_ghz else 0)  # Set scale digits based on display_ghz if Frequency is True
-            scale.set_round_digits(2 if Frequency and self.global_state.display_ghz else 0)
+            scale.set_draw_value(False)  # Don't draw the built-in value
 
             overlay = Gtk.Overlay()
             label = Gtk.Label()
-            overlay.add_overlay(scale)
+
+            overlay.set_child(scale)
             overlay.add_overlay(label)
 
             def update_label(scale, label):
                 value = scale.get_value()
-                if Frequency and self.global_state.display_ghz:
-                    display_value = value / 1000.0
-                    label.set_text(f"{display_value:.2f} GHz")
+                if Frequency:
+                    if self.global_state.display_ghz:
+                        display_value = value / 1000.0
+                        label.set_text(f"{display_value:.2f} GHz")
+                    else:
+                        label.set_text(f"{value:.0f} MHz")
                 else:
                     if Negative:
                         display_value = -value  # Set scale digits to display a negative value
                     else:
                         display_value = value
-                    label.set_text(f"{display_value:.0f} MHz" if Frequency else str(int(display_value)))
+                    label.set_text(str(int(display_value)))
                 self._update_scale_label_position(scale, label)
 
             def on_scale_value_changed(scale):
@@ -214,6 +187,7 @@ class WidgetFactory:
                 scale.connect("value-changed", command)
             scale.connect("value-changed", lambda s: on_scale_value_changed(s))
             on_scale_value_changed(scale)
+
             label.set_halign(Gtk.Align.START)
             label.set_valign(Gtk.Align.CENTER)
 
@@ -246,8 +220,9 @@ class WidgetFactory:
             label_width = label.get_allocated_width()
             label_x = handle_x - (label_width / 2)
             label_x = max(min(label_x, scale_width - label_width), 0)
+
             label.set_margin_start(int(label_x))
-            label.set_margin_top(65)
+            label.set_margin_top(42)  # Position the label below the slider
         except Exception as e:
             self.logger.error(f"Failed to calculate scales position: {e}")
 
@@ -256,8 +231,7 @@ class WidgetFactory:
         for scale, label, is_frequency in self.scales:
             if is_frequency:  # Only update if it is a frequency scale
                 try:
-                    adjustment = scale.get_adjustment()
-                    value = adjustment.get_value()
+                    value = scale.get_value()
                     if self.global_state.display_ghz:
                         display_value = value / 1000.0
                         label.set_text(f"{display_value:.2f} GHz")
@@ -321,28 +295,27 @@ class WidgetFactory:
             self.logger.error("Failed to create SpinButton: %s", e)
             return None
 
-    def create_combobox(self, container, values, command, x=0, y=0, **kwargs):
+    def create_dropdown(self, container, values, command, x=0, y=0, **kwargs):
         try:
-            store = Gtk.ListStore(str)
+            store = Gtk.StringList()
             for val in values:
-                store.append([val])
-            combobox = Gtk.ComboBox.new_with_model(store)
-            renderer_text = Gtk.CellRendererText()
-            combobox.pack_start(renderer_text, True)
-            combobox.add_attribute(renderer_text, "text", 0)
-            combobox.connect("changed", command)
+                store.append(val)
+            dropdown = Gtk.DropDown.new(store, None)
+            
+            # Change the signal connection
+            dropdown.connect("notify::selected", command)
 
             # Apply hexpand and vexpand if provided in kwargs
             if 'hexpand' in kwargs:
-                combobox.set_hexpand(kwargs['hexpand'])
+                dropdown.set_hexpand(kwargs['hexpand'])
             if 'vexpand' in kwargs:
-                combobox.set_vexpand(kwargs['vexpand'])
+                dropdown.set_vexpand(kwargs['vexpand'])
 
-            self._set_margins(combobox, **kwargs)
-            self._attach_widget(container, combobox, x, y)
-            return combobox
+            self._set_margins(dropdown, **kwargs)
+            self._attach_widget(container, dropdown, x, y)
+            return dropdown
         except Exception as e:
-            self.logger.error("Failed to create combobox: %s", e)
+            self.logger.error("Failed to create dropdown: %s", e)
             return None
 
     def create_checkbutton(self, container, text, variable, command=None, x=0, y=0, **kwargs):

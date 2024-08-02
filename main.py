@@ -17,9 +17,10 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import os
+import cairo
 import gi
 gi.require_version('Gtk', '4.0')
-from gi.repository import Gtk, GLib
+from gi.repository import Gtk, GLib, Gdk
 from config_setup import ConfigManager
 from log_setup import LogSetup
 from shared import GlobalState, GuiComponents
@@ -76,7 +77,7 @@ class ClockSpeedsApp(Gtk.Application):
         try:
             self.window = Gtk.ApplicationWindow(application=self)
             self.window.set_title("ClockSpeeds")
-            self.window.set_default_size(535, 400)
+            self.window.set_default_size(535, 535)
             self.window.set_resizable(False)
             self.window.connect("close-request", self.close_main_window)
             self.window.present()
@@ -331,7 +332,7 @@ class ClockSpeedsApp(Gtk.Application):
                 about_fixed,
                 markup="<b>ClockSpeeds</b>\n\n"
                        "CPU Monitoring and Control Application for Linux\n\n"
-                       "Version 0.12",
+                       "Version 0.13",
                 x=120, y=30)
 
             # Credits Tab
@@ -364,48 +365,131 @@ class ClockSpeedsApp(Gtk.Application):
             self.monitor_grid.attach(monitor_fixed, 0, 0, 1, 1)
 
             self.clock_labels = {}
-            self.progress_bars = {}
+            self.usage_labels = {}
+            self.cpu_graphs = {}
+
+            window_width = 535
+            graph_width = 240
+            graph_height = 80
+            horizontal_gap = 20
+            vertical_gap = 20
+            top_margin = 20
+
+            # Calculate total width of graphs and gaps
+            total_width = (graph_width * 2) + horizontal_gap
+            left_margin = (window_width - total_width) // 2
 
             for i in range(self.cpu_file_search.thread_count):
                 row = i // 2
                 col = i % 2
-                x_offset = col * 250  # Adjust horizontal spacing
-                y_offset = row * 50   # Adjust vertical spacing
+                x_offset = left_margin + col * (graph_width + horizontal_gap)
+                y_offset = top_margin + row * (graph_height + vertical_gap)
 
-                description_label = self.widget_factory.create_label(
-                    monitor_fixed, f"Thread {i}:", x=x_offset + 10, y=y_offset + 15)
-                clock_label = self.widget_factory.create_entry(
-                    monitor_fixed, "N/A MHz", False, width_chars=10, x=x_offset + 80, y=y_offset + 10)
-                progress_bar, percentage_label = self.widget_factory.create_progressbar(
-                    monitor_fixed, x=x_offset + 175, y=y_offset)
+                # CPU usage graph
+                cpu_graph = CPUGraphArea(i)
+                cpu_graph.set_content_width(graph_width)
+                cpu_graph.set_content_height(graph_height)
+                monitor_fixed.put(cpu_graph, x_offset, y_offset)
+                self.cpu_graphs[i] = cpu_graph
 
+                # CPU header
+                cpu_header = self.widget_factory.create_label(
+                    monitor_fixed, f"CPU {i}", x=x_offset + 5, y=y_offset + 5)
+                cpu_header.get_style_context().add_class('medium-header')
+
+                # Usage label
+                usage_label = self.widget_factory.create_label(
+                    monitor_fixed, "0.0%", x=x_offset + graph_width - 62, y=y_offset + 5)
+                usage_label.get_style_context().add_class('thick-header')
+                self.usage_labels[i] = usage_label
+
+                # Clock speed label
+                clock_label = self.widget_factory.create_label(
+                    monitor_fixed, "0 MHz", x=x_offset + 5, y=y_offset + graph_height - 25)
+                clock_label.get_style_context().add_class('medium-label')
                 self.clock_labels[i] = clock_label
-                self.progress_bars[i] = (progress_bar, percentage_label)
 
-            y_offset += 60
-
-            average_description_label = self.widget_factory.create_label(
-                monitor_fixed, "Average:", x=16, y=y_offset + 5)
-            self.average_clock_entry = self.widget_factory.create_entry(
-                monitor_fixed, "N/A MHz", False, width_chars=10, x=80, y=y_offset)
-            self.average_progress_bar = self.widget_factory.create_progressbar(
-                monitor_fixed, x=175, y=y_offset - 10)
-
-            package_temp_label = self.widget_factory.create_label(
-                monitor_fixed, "Package Temp:", x=280, y=y_offset + 4)
-            self.package_temp_entry = self.widget_factory.create_entry(
-                monitor_fixed, "N/A °C", False, width_chars=10, x=380, y=y_offset)
+            # Calculate y_offset for the average graph
+            y_offset = top_margin + ((self.cpu_file_search.thread_count // 2) * (graph_height + vertical_gap)) + vertical_gap
 
             self.thermal_throttle_label = self.widget_factory.create_label(
-                monitor_fixed, "Throttling", x=392, y=y_offset + 32)
+                monitor_fixed, "Throttling", x=left_margin + 1, y=y_offset - 30)
             self.thermal_throttle_label.set_visible(False)
 
             self.current_governor_label = self.widget_factory.create_label(
-                monitor_fixed, "", x=170, y=y_offset + 50, margin_bottom=10)
+                monitor_fixed, "", x=left_margin + 155, y=y_offset - 30)
+
+            # Average usage graph
+            avg_graph_height = graph_height * 1.3
+            self.avg_usage_graph = CPUGraphArea("avg")
+            self.avg_usage_graph.set_content_width(graph_width * 2 + horizontal_gap)
+            self.avg_usage_graph.set_content_height(avg_graph_height)
+            monitor_fixed.put(self.avg_usage_graph, left_margin, y_offset)
+            self.avg_usage_graph.set_margin_bottom(20)
+
+            # Average header
+            avg_header = self.widget_factory.create_label(
+                monitor_fixed, "Average", x=left_margin + 5, y=y_offset + 5)
+            avg_header.get_style_context().add_class('medium-header')
+
+            # Average usage label
+            self.avg_usage_label = self.widget_factory.create_label(
+                monitor_fixed, "0.0%", x=left_margin + (graph_width * 2) - 62, y=y_offset + 5)
+            self.avg_usage_label.get_style_context().add_class('thick-header')
+
+            # Average clock speed label
+            self.avg_clock_label = self.widget_factory.create_label(
+                monitor_fixed, "0 MHz", x=left_margin + 5, y=y_offset + avg_graph_height - 25)
+            self.avg_clock_label.get_style_context().add_class('medium-label')
+
+            # Package temperature
+            self.package_temp_label = self.widget_factory.create_label(
+                monitor_fixed, "CPU Temperature: N/A", x=left_margin + 75, y=y_offset + avg_graph_height - 25)
+            self.package_temp_label.get_style_context().add_class('medium-label')
 
             self.logger.info("Monitor widgets created.")
         except Exception as e:
             self.logger.error(f"Error creating monitor widgets: {e}")
+
+    def update_cpu_widgets(self):
+        try:
+            speeds = self.cpu_manager.read_cpu_speeds()
+            usage = self.cpu_manager.calculate_load(self.cpu_manager.prev_stat, self.cpu_manager.read_stat_file())
+            temp = self.cpu_manager.read_package_temperature()
+
+            # Update graphs and labels
+            avg_usage = 0
+            avg_speed = 0
+            for i, (_, speed) in enumerate(speeds):
+                if f'cpu{i}' in usage:
+                    cpu_usage = usage[f'cpu{i}']
+                    self.cpu_graphs[i].update(cpu_usage / 100)
+                    self.usage_labels[i].set_text(f"{cpu_usage:.1f}%")
+                    avg_usage += cpu_usage
+                    avg_speed += speed
+                self.clock_labels[i].set_text(f"{speed:.2f} GHz")
+
+            # Update average usage and clock speed
+            thread_count = len(speeds)
+            if thread_count > 0:
+                avg_usage /= thread_count
+                avg_speed /= thread_count
+                self.avg_usage_graph.update(avg_usage / 100)
+                self.avg_usage_label.set_text(f"{avg_usage:.1f}%")
+                self.avg_clock_label.set_text(f"{avg_speed:.2f} GHz")
+
+            # Update temperature
+            if temp is not None:
+                self.package_temp_label.set_text(f"CPU Temperature: {temp:.1f}°C")
+
+            # Update governor
+            self.cpu_manager.get_current_governor()
+
+            # Update throttle status
+            self.cpu_manager.update_throttle()
+
+        except Exception as e:
+            self.logger.error(f"Error updating CPU widgets: {e}")
 
     def create_control_widgets(self):
         # Create the widgets for the control tab
@@ -421,70 +505,134 @@ class ClockSpeedsApp(Gtk.Application):
             self.initialization_complete = False
             self.debounce_timeout_id = None
 
-            for i in range(self.cpu_file_search.thread_count):
-                y_offset = i * 100  # Adjust vertical spacing
+            window_width = 535
+            box_width = 240
+            box_height = 130
+            horizontal_gap = 20
+            vertical_gap = 20
+            top_margin = 10
 
+            # Calculate total width of boxes and gaps
+            total_width = (box_width * 2) + horizontal_gap
+            left_margin = (window_width - total_width) // 2
+
+            for i in range(self.cpu_file_search.thread_count):
+                row = i // 2
+                col = i % 2
+                x_offset = left_margin + col * (box_width + horizontal_gap)
+                y_offset = top_margin + row * (box_height + vertical_gap)
+
+                # Create a frame for each CPU thread
+                cpu_frame = Gtk.Frame()
+                cpu_frame.set_size_request(box_width, box_height)
+                control_fixed.put(cpu_frame, x_offset, y_offset)
+
+                cpu_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+                cpu_frame.set_child(cpu_box)
+
+                # Header with checkbox
                 cpu_max_min_checkbutton = self.widget_factory.create_checkbutton(
-                    control_fixed, f"Thread {i}", None, lambda button, i=i: self.debounced_update_check_all_state(), x=10, y=y_offset + 27)
+                    cpu_box, f"Thread {i}", None, lambda button, i=i: self.debounced_update_check_all_state(), margin_start=77)
+                cpu_max_min_checkbutton.get_style_context().add_class('thick-label')
                 cpu_max_min_checkbutton.set_active(True)
                 cpu_max_min_checkbutton.set_tooltip_text("Toggle whether minimum and maximum frequency should be applied")
 
+                # Maximum frequency scale
+                max_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+                cpu_box.append(max_box)
+                max_label = self.widget_factory.create_label(
+                    max_box, "Max", margin_start=3, margin_bottom=17)
+                max_label.get_style_context().add_class('small-header')
                 cpu_max_scale = self.widget_factory.create_scale(
-                    control_fixed, self.scale_manager.update_min_max_labels, self.global_state.SCALE_MIN, self.global_state.SCALE_MAX, x=100, y=y_offset + 10, Frequency=True)
+                    max_box, self.scale_manager.update_min_max_labels, self.global_state.SCALE_MIN, self.global_state.SCALE_MAX, Frequency=True, margin_bottom=17)
                 cpu_max_scale.set_name(f'cpu_max_scale_{i}')
                 cpu_max_scale.set_tooltip_text("Maximum frequency")
-                cpu_max_desc = self.widget_factory.create_label(
-                    control_fixed, f"Maximum", x=440, y=y_offset + 10)
 
+                # Minimum frequency scale
+                min_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+                cpu_box.append(min_box)
+                min_label = self.widget_factory.create_label(
+                    min_box, "Min", margin_start=3)
+                min_label.get_style_context().add_class('small-header')
                 cpu_min_scale = self.widget_factory.create_scale(
-                    control_fixed, self.scale_manager.update_min_max_labels, self.global_state.SCALE_MIN, self.global_state.SCALE_MAX, x=100, y=y_offset + 50, Frequency=True)
+                    min_box, self.scale_manager.update_min_max_labels, self.global_state.SCALE_MIN, self.global_state.SCALE_MAX, Frequency=True)
                 cpu_min_scale.set_name(f'cpu_min_scale_{i}')
                 cpu_min_scale.set_tooltip_text("Minimum frequency")
-                cpu_min_desc = self.widget_factory.create_label(
-                    control_fixed, f"Minimum", x=440, y=y_offset + 50)
 
                 self.cpu_max_min_checkbuttons[i] = cpu_max_min_checkbutton
                 self.cpu_max_scales[i] = cpu_max_scale
                 self.cpu_min_scales[i] = cpu_min_scale
 
-            # Add Check All checkbutton
+            # Global controls
+            global_controls_y = top_margin + ((self.cpu_file_search.thread_count // 2) * (box_height + vertical_gap)) + 10
+
+            # Adjust the global_box to take up more width and add margins
+            global_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+            control_fixed.put(global_box, 10, global_controls_y)
+            global_box.set_size_request(window_width - 20, -1)
+            global_box.set_margin_start(5)
+            global_box.set_margin_end(5)
+            global_box.set_margin_bottom(10)
+
+            # Check All and Apply Speed Limits
+            check_apply_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            global_box.append(check_apply_box)
+
             self.check_all_checkbutton = self.widget_factory.create_checkbutton(
-                control_fixed, "Check All", None, self.on_check_all_toggled, x=10, y=y_offset + 98)
+                check_apply_box, "Check All Threads", None, self.on_check_all_toggled, margin_bottom=20)
             self.check_all_checkbutton.set_tooltip_text("Toggle all thread checkbuttons")
 
             self.apply_max_min_button = self.widget_factory.create_button(
-                control_fixed, "Apply Speed Limits", self.cpu_manager.apply_cpu_clock_speed_limits, x=194, y=y_offset + 95)
+                check_apply_box, "Apply Speed Limits", self.cpu_manager.apply_cpu_clock_speed_limits, margin_start=33, margin_bottom=20)
             self.apply_max_min_button.set_tooltip_text("Apply minimum and maximum speed limits")
 
-            self.governor_combobox = self.widget_factory.create_combobox(
-                control_fixed, self.global_state.unique_governors, self.cpu_manager.set_cpu_governor, x=100, y=y_offset + 128)
+            # Governor and CPU Boost
+            gov_boost_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            global_box.append(gov_boost_box)
+
+            self.governor_dropdown = self.widget_factory.create_dropdown(
+                gov_boost_box, ["Select Governor"] + sorted(self.global_state.unique_governors), self.cpu_manager.set_cpu_governor, margin_bottom=10)
+            self.governor_dropdown.set_hexpand(True)
 
             self.boost_checkbutton = self.widget_factory.create_checkbutton(
-                control_fixed, "Enable CPU Boost Clock", self.global_state.boost_enabled, self.cpu_manager.toggle_boost, x=265, y=y_offset + 130)
+                gov_boost_box, "Enable CPU Boost Clock", self.global_state.boost_enabled, self.cpu_manager.toggle_boost, margin_bottom=10)
 
+            # TDP Controls
+            tdp_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+            global_box.append(tdp_box)
+
+            tdp_label_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+            tdp_box.append(tdp_label_box)
             self.tdp_label = self.widget_factory.create_label(
-                control_fixed, "TDP:", x=60, y=y_offset + 160)
+                tdp_label_box, "TDP", margin_bottom=15)
+            self.tdp_label.get_style_context().add_class('medium-header')
+
             self.tdp_scale = self.widget_factory.create_scale(
-                control_fixed, None, self.global_state.TDP_SCALE_MIN, self.global_state.TDP_SCALE_MAX, x=100, y=y_offset + 160)
+                tdp_box, None, self.global_state.TDP_SCALE_MIN, self.global_state.TDP_SCALE_MAX, TDP=True, margin_bottom=20)
             self.tdp_scale.set_tooltip_text("Adjust the TDP in watts")
+            self.tdp_scale.set_hexpand(True)
             self.apply_tdp_button = self.widget_factory.create_button(
-                control_fixed, "Apply TDP", self.cpu_manager.set_intel_tdp, x=220, y=y_offset + 205, margin_bottom=10)
+                tdp_box, "Apply TDP", self.cpu_manager.set_intel_tdp, margin_bottom=20)
 
-            # Add PBO Curve Offset Scale
-            self.pbo_curve_label = self.widget_factory.create_label(
-                control_fixed, "PBO Offset:", x=23, y=y_offset + 235)
+            # PBO Curve Offset
+            pbo_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+            global_box.append(pbo_box)
+
+            self.pbo_curve_label = self.widget_factory.create_label(pbo_box, "PBO Offset:")
             self.pbo_curve_scale = self.widget_factory.create_scale(
-                control_fixed, None, self.global_state.PBO_SCALE_MIN, self.global_state.PBO_SCALE_MAX, x=100, y=y_offset + 235, Negative=True)
+                pbo_box, None, self.global_state.PBO_SCALE_MIN, self.global_state.PBO_SCALE_MAX, Negative=True)
             self.pbo_curve_scale.set_tooltip_text("Adjust the negative PBO curve offset")
+            self.pbo_curve_scale.set_hexpand(True)
             self.apply_pbo_button = self.widget_factory.create_button(
-                control_fixed, "Apply PBO Offset", self.cpu_manager.set_pbo_curve_offset, x=190, y=y_offset + 280, margin_bottom=10)
+                pbo_box, "Apply PBO Offset", self.cpu_manager.set_pbo_curve_offset)
 
-            # Add Energy Performance Bias ComboBox
-            self.epb_combobox = self.widget_factory.create_combobox(
-                control_fixed, ["Select Energy Performance Bias", "0 Performance", "4 Balance-Performance", "6 Normal", "8 Balance-Power", "15 Power"],
-                self.cpu_manager.set_energy_perf_bias, x=155, y=y_offset + 245, margin_bottom=10)
-            self.epb_combobox.set_active(0)
-            self.epb_combobox.set_tooltip_text("Select Intel performance and energy bias hint")
+            # Energy Performance Bias
+            self.epb_dropdown = self.widget_factory.create_dropdown(
+                global_box, ["Select Energy Performance Bias", "0 Performance", "4 Balance-Performance", "6 Normal", "8 Balance-Power", "15 Power"],
+                self.cpu_manager.set_energy_perf_bias)
+            self.epb_dropdown.set_selected(0)
+            self.epb_dropdown.set_tooltip_text("Select Intel performance and energy bias hint")
+            self.epb_dropdown.set_hexpand(True)
 
             self.initialization_complete = True
             self.update_check_all_state(None)
@@ -504,23 +652,25 @@ class ClockSpeedsApp(Gtk.Application):
         # Add created widgets to the shared GUI components dictionary
         try:
             self.gui_components['clock_labels'] = self.clock_labels
-            self.gui_components['progress_bars'] = self.progress_bars
-            self.gui_components['average_clock_entry'] = self.average_clock_entry
-            self.gui_components['average_progress_bar'] = self.average_progress_bar
-            self.gui_components['package_temp_entry'] = self.package_temp_entry
+            self.gui_components['usage_labels'] = self.usage_labels
+            self.gui_components['cpu_graphs'] = self.cpu_graphs
+            self.gui_components['avg_usage_graph'] = self.avg_usage_graph
+            self.gui_components['avg_usage_label'] = self.avg_usage_label
+            self.gui_components['avg_clock_label'] = self.avg_clock_label
+            self.gui_components['package_temp_label'] = self.package_temp_label
             self.gui_components['current_governor_label'] = self.current_governor_label
             self.gui_components['thermal_throttle_label'] = self.thermal_throttle_label
             self.gui_components['cpu_max_min_checkbuttons'] = self.cpu_max_min_checkbuttons
             self.gui_components['cpu_min_scales'] = self.cpu_min_scales
             self.gui_components['cpu_max_scales'] = self.cpu_max_scales
             self.gui_components['apply_max_min_button'] = self.apply_max_min_button
-            self.gui_components['governor_combobox'] = self.governor_combobox
+            self.gui_components['governor_dropdown'] = self.governor_dropdown
             self.gui_components['boost_checkbutton'] = self.boost_checkbutton
             self.gui_components['tdp_scale'] = self.tdp_scale
             self.gui_components['apply_tdp_button'] = self.apply_tdp_button
             self.gui_components['pbo_curve_scale'] = self.pbo_curve_scale
             self.gui_components['apply_pbo_button'] = self.apply_pbo_button
-            self.gui_components['epb_combobox'] = self.epb_combobox
+            self.gui_components['epb_dropdown'] = self.epb_dropdown
             self.logger.info("Widgets added to gui_components.")
         except Exception as e:
             self.logger.error(f"Error adding main widgets to gui_components: {e}")
@@ -539,6 +689,7 @@ class ClockSpeedsApp(Gtk.Application):
         try:
             self.scale_manager.load_scale_config_settings()
             self.scale_manager.on_disable_scale_limits_change(None)
+            self.widget_factory.update_all_scale_labels()
         except Exception as e:
             self.logger.error(f"Error updating scales: {e}")
 
@@ -548,7 +699,7 @@ class ClockSpeedsApp(Gtk.Application):
             self.cpu_manager.update_clock_speeds()
             self.cpu_manager.read_package_temperature()
             self.cpu_manager.get_current_governor()
-            self.cpu_manager.update_governor_combobox()
+            self.cpu_manager.update_governor_dropdown()
             self.cpu_manager.update_boost_checkbutton()
         except Exception as e:
             self.logger.error(f"Error updating CPU widgets: {e}")
@@ -631,11 +782,57 @@ class ClockSpeedsApp(Gtk.Application):
         # Sets the visibility of the TDP widgets based on tdp_installed
         try:
             if self.cpu_file_search.cpu_type == "Intel":
-                self.epb_combobox.set_visible(True)
+                self.epb_dropdown.set_visible(True)
             else:
-                self.epb_combobox.set_visible(False)
+                self.epb_dropdown.set_visible(False)
         except Exception as e:
             self.logger.error(f"Error setting Intel EPB widgets visibility: {e}")
+
+class CPUGraphArea(Gtk.DrawingArea):
+    def __init__(self, cpu_id):
+        super().__init__()
+        self.cpu_id = cpu_id
+        self.usage_history = [0] * 60  # Store 60 seconds of history
+        self.set_draw_func(self.draw)
+
+    def update(self, usage):
+        self.usage_history.pop(0)
+        self.usage_history.append(usage)
+        self.queue_draw()
+
+    def draw(self, area, cr, width, height):
+        # Background
+        cr.set_source_rgb(0.188, 0.196, 0.235)
+        cr.paint()
+
+        # Draw outline
+        cr.set_source_rgb(0.3, 0.3, 0.3)  # Light gray for the outline
+        cr.set_line_width(1)
+        cr.rectangle(0.5, 0.5, width - 1, height - 1)
+        cr.stroke()
+
+        # Draw tint underneath the graph line
+        cr.set_source_rgba(0.2, 0.4, 0.8, 0.2)  # Blue tint with alpha
+        
+        cr.move_to(0, height)
+        for i, usage in enumerate(self.usage_history):
+            x = i * (width / 59)
+            y = height - (usage * height)
+            cr.line_to(x, y)
+        cr.line_to(width, height)
+        cr.close_path()
+        cr.fill()
+
+        # Draw graph
+        cr.set_source_rgb(0.322, 0.580, 0.886)
+        cr.set_line_width(1.5)
+
+        cr.move_to(0, height - (self.usage_history[0] * height))
+        for i, usage in enumerate(self.usage_history):
+            x = i * (width / 59)
+            y = height - (usage * height)
+            cr.line_to(x, y)
+        cr.stroke()
 
 def main():
     # Main function to start the application

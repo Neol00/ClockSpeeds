@@ -13,7 +13,9 @@ This project is in early development so some things might not work as expected.
 * Package temperature,
 * Current selected governor
 
-<img src="images/ClockSpeeds-Preview.png" alt="Sample Image" width="470" height="400">
+<img src="images/ClockSpeeds-Preview.png" alt="Sample Image" width="470" height="500">
+
+<img src="images/ClockSpeeds-Preview2.png" alt="Sample Image" width="470" height="500">
 
 - **Control CPU:** 
 * Adjust CPU the minimum and maximum frequencies,
@@ -23,9 +25,7 @@ This project is in early development so some things might not work as expected.
 * Set AMD Ryzen PBO offset curve
 * Set Intel Energy Performance Bias
 
-<img src="images/ClockSpeeds-Preview1.png" alt="Sample Image" width="470" height="400">
-
-<img src="images/ClockSpeeds-Preview2.png" alt="Sample Image" width="470" height="400">
+<img src="images/ClockSpeeds-Preview1.png" alt="Sample Image" width="470" height="500">
 
 ## Getting Started
 

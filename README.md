@@ -25,6 +25,8 @@ This project is in early development so some things might not work as expected.
 
 <img src="images/ClockSpeeds-Preview1.png" alt="Sample Image" width="470" height="400">
 
+<img src="images/ClockSpeeds-Preview2.png" alt="Sample Image" width="470" height="400">
+
 ## Getting Started
 
 Simply clone the repository with,

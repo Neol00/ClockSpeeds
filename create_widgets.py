@@ -341,12 +341,16 @@ class WidgetFactory:
                 self.logger.warning("Widget already has a parent and won't be reattached.")
                 return
 
+            if container is None:
+                # If container is None, don't attach the widget
+                return
+
             if isinstance(container, Gtk.Dialog):
                 content_area = container.get_content_area()
                 content_area.append(widget)
             elif isinstance(container, Gtk.Grid):
-                next_row = len(container.get_children()) // container.get_column_homogeneous()
-                next_col = len(container.get_children()) % container.get_column_homogeneous()
+                next_row = len(list(container.get_children())) // container.get_column_homogeneous()
+                next_col = len(list(container.get_children())) % container.get_column_homogeneous()
                 container.attach(widget, next_col, next_row, 1, 1)
             elif isinstance(container, Gtk.Box):
                 container.append(widget)
@@ -354,11 +358,16 @@ class WidgetFactory:
                 container.put(widget, x, y)
             elif isinstance(container, (Gtk.ApplicationWindow, Gtk.Popover, Gtk.Window)):
                 container.set_child(widget)
+            elif isinstance(container, Gtk.Frame):
+                if container.get_child() is None:
+                    container.set_child(widget)
+                else:
+                    self.logger.warning("Frame already has a child. Cannot attach another widget.")
             else:
                 self.logger.error(f"Container of type {type(container).__name__} does not support pack_start or attach")
                 raise TypeError(f"Unsupported container type {type(container).__name__}")
         except Exception as e:
-            self.logger.error("Failed to attach widget: %s", e)
+            self.logger.error(f"Failed to attach widget: {e}")
 
     def _set_margins(self, widget, **kwargs):
         # Set margins for a widget if specified in kwargs

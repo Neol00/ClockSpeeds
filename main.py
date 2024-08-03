@@ -181,8 +181,6 @@ class ClockSpeedsApp(Gtk.Application):
 
             settings_button = self.widget_factory.create_button(
                 more_box, "Settings", self.settings_window.open_settings_window, margin_start=5, margin_end=5, margin_bottom=5)
-            system_button = self.widget_factory.create_button(
-                more_box, "System", self.open_system_window, margin_start=5, margin_end=5, margin_bottom=5)
             about_button = self.widget_factory.create_button(
                 more_box, "About", self.open_about_dialog, margin_start=5, margin_end=5)
 
@@ -191,110 +189,6 @@ class ClockSpeedsApp(Gtk.Application):
             more_popover.popup()
         except Exception as e:
             self.logger.error(f"Error showing more options: {e}")
-
-    def open_system_window(self, widget=None):
-        # Open the system information window
-        try:
-            # Get CPU information from the CPU manager
-            cpu_info = self.cpu_manager.get_cpu_info()
-            if not cpu_info:
-                self.logger.warning("Failed to retrieve CPU info.")
-                return
-
-            # Create a new Gtk.Window for the system information
-            system_window = self.widget_factory.create_window("System", self.window, 330, 300)
-
-            def on_destroy(widget):
-                system_window.close()
-
-            system_window.connect("close-request", on_destroy)
-
-            # Create a vertical box to hold the content
-            system_box = self.widget_factory.create_box(system_window)
-
-            # Create a grid to layout the system information
-            system_grid = self.widget_factory.create_grid()
-            system_fixed = Gtk.Fixed()
-            system_box.append(system_grid)
-            system_grid.attach(system_fixed, 0, 0, 1, 1)
-
-            # Add a label for the system information title
-            self.widget_factory.create_label(
-                system_fixed, markup="<b>System Information</b>", x=105, y=10)
-
-            y_offset = 40
-            for key, value in cpu_info.items():
-                # Skip certain keys to avoid displaying them
-                if key not in ["Min (MHz)", "Max (MHz)", "Physical Cores", "Virtual Cores (Threads)", "Total RAM (MB)", "Cache Sizes"]:
-                    self.widget_factory.create_label(
-                        system_fixed, text=f"{key}: {value}", x=10, y=y_offset)
-                    y_offset += 30
-
-            # Display cache sizes if available
-            if "Cache Sizes" in cpu_info:
-                cache_sizes = cpu_info["Cache Sizes"]
-                self.widget_factory.create_label(
-                    system_fixed, text="Cache Sizes:", x=10, y=y_offset)
-                y_offset += 30
-                for cache_type, size in cache_sizes.items():
-                    self.widget_factory.create_label(
-                        system_fixed, text=f"{cache_type}: {size}", x=10, y=y_offset)
-                    y_offset += 30
-
-            # Display physical and virtual cores
-            self.widget_factory.create_label(
-                system_fixed, text=f"Cores: {cpu_info['Physical Cores']}  Virtual Cores (Threads): {cpu_info['Virtual Cores (Threads)']}", x=10, y=y_offset)
-            y_offset += 30
-
-            # Display total RAM
-            self.widget_factory.create_label(
-                system_fixed, text=f"Total RAM (MB): {cpu_info['Total RAM (MB)']}", x=10, y=y_offset)
-            y_offset += 30
-
-            min_frequencies = cpu_info.get("Min (MHz)", [])
-            max_frequencies = cpu_info.get("Max (MHz)", [])
-
-            # Display allowed CPU frequencies if available
-            if min_frequencies and max_frequencies:
-                self.widget_factory.create_label(
-                    system_fixed, markup="<b>Allowed CPU Frequencies</b>", x=88, y=y_offset)
-                y_offset += 30
-
-                # Group threads by their min and max frequencies
-                thread_groups = {}
-                for i, (min_freq, max_freq) in enumerate(zip(min_frequencies, max_frequencies)):
-                    key = (min_freq, max_freq)
-                    if key not in thread_groups:
-                        thread_groups[key] = []
-                    thread_groups[key].append(i)
-
-                # Display thread groups with their frequency ranges
-                for (min_freq, max_freq), threads in thread_groups.items():
-                    thread_ranges = []
-                    start = threads[0]
-                    for i in range(1, len(threads)):
-                        if threads[i] != threads[i-1] + 1:
-                            end = threads[i-1]
-                            if start == end:
-                                thread_ranges.append(f"Thread {start}")
-                            else:
-                                thread_ranges.append(f"Thread {start}-{end}")
-                            start = threads[i]
-                    end = threads[-1]
-                    if start == end:
-                        thread_ranges.append(f"Thread {start}")
-                    else:
-                        thread_ranges.append(f"Thread {start}-{end}")
-
-                    self.widget_factory.create_label(
-                        system_fixed, text=f"{', '.join(thread_ranges)}: {min_freq:.2f} MHz - {max_freq:.2f} MHz", x=10, y=y_offset, margin_bottom=10)
-                    y_offset += 30
-
-            # Present the system information window
-            system_window.present()
-
-        except Exception as e:
-            self.logger.error(f"Error opening system window: {e}")
 
     def open_about_dialog(self, widget=None):
         # Open the about dialog
@@ -364,6 +258,9 @@ class ClockSpeedsApp(Gtk.Application):
             monitor_fixed = Gtk.Fixed()
             self.monitor_grid.attach(monitor_fixed, 0, 0, 1, 1)
 
+            # Get CPU information
+            cpu_info = self.cpu_manager.get_cpu_info()
+
             self.clock_labels = {}
             self.usage_labels = {}
             self.cpu_graphs = {}
@@ -374,10 +271,20 @@ class ClockSpeedsApp(Gtk.Application):
             horizontal_gap = 20
             vertical_gap = 20
             top_margin = 20
+            left_margin = (window_width - (graph_width * 2 + horizontal_gap)) // 2
 
-            # Calculate total width of graphs and gaps
-            total_width = (graph_width * 2) + horizontal_gap
-            left_margin = (window_width - total_width) // 2
+            # CPU Model Name at the top
+            if "Model Name" in cpu_info:
+                model_name = cpu_info["Model Name"]
+                model_label = self.widget_factory.create_label(
+                    monitor_fixed, text=model_name, x=(window_width - 400) // 2, y=7)
+                model_label.set_size_request(400, -1)
+                model_label.set_justify(Gtk.Justification.CENTER)
+                model_label.set_wrap(True)
+                model_label.get_style_context().add_class('medium-label')
+
+            # Adjust top_margin to account for the model name
+            top_margin += 15
 
             for i in range(self.cpu_file_search.thread_count):
                 row = i // 2
@@ -446,6 +353,94 @@ class ClockSpeedsApp(Gtk.Application):
             self.package_temp_label = self.widget_factory.create_label(
                 monitor_fixed, "CPU Temperature: N/A", x=left_margin + 75, y=y_offset + avg_graph_height - 25)
             self.package_temp_label.get_style_context().add_class('medium-label')
+
+            # Add system information
+            system_info_y = y_offset + avg_graph_height + 20
+            system_info_x = left_margin
+
+            if cpu_info:
+                # Create a frame for system information
+                system_frame = Gtk.Frame()
+                system_frame.set_size_request(window_width - 10, -1)
+                monitor_fixed.put(system_frame, 5, system_info_y)
+
+                system_box = self.widget_factory.create_box(None)
+                system_box.set_orientation(Gtk.Orientation.VERTICAL)
+                system_box.set_spacing(10)
+                system_box.set_margin_start(10)
+                system_box.set_margin_end(10)
+                system_box.set_margin_top(10)
+                system_box.set_margin_bottom(10)
+                system_frame.set_child(system_box)
+
+                # Add centered model name as header inside the frame
+                if "Model Name" in cpu_info:
+                    model_name = cpu_info["Model Name"]
+                    model_label = self.widget_factory.create_label(
+                        system_box, text=model_name)
+                    model_label.set_justify(Gtk.Justification.CENTER)
+                    model_label.set_wrap(True)
+                    model_label.set_halign(Gtk.Align.CENTER)
+                    model_label.get_style_context().add_class('medium-label')
+
+                # Create two columns for system information
+                info_box = self.widget_factory.create_box(system_box)
+                info_box.set_orientation(Gtk.Orientation.HORIZONTAL)
+                info_box.set_spacing(110)
+
+                left_column = self.widget_factory.create_box(info_box)
+                right_column = self.widget_factory.create_box(info_box)
+
+                # Display physical and virtual cores
+                self.widget_factory.create_label(
+                    left_column, text=f"{cpu_info['Physical Cores']} Cores {cpu_info['Virtual Cores (Threads)']} Threads")
+
+                # Display total RAM
+                self.widget_factory.create_label(
+                    left_column, text=f"Total RAM (MB): {cpu_info['Total RAM (MB)']}")
+
+                # Populate left column with cache sizes
+                if "Cache Sizes" in cpu_info:
+                    cache_sizes = cpu_info["Cache Sizes"]
+                    for cache_type, size in cache_sizes.items():
+                        self.widget_factory.create_label(
+                            left_column, text=f"{cache_type}: {size}")
+
+                # Display allowed CPU frequencies in the right column
+                min_frequencies = cpu_info.get("Min (MHz)", [])
+                max_frequencies = cpu_info.get("Max (MHz)", [])
+                if min_frequencies and max_frequencies:
+                    self.widget_factory.create_label(
+                        right_column, text="Allowed CPU Frequencies")
+
+                    # Group threads by their min and max frequencies
+                    thread_groups = {}
+                    for i, (min_freq, max_freq) in enumerate(zip(min_frequencies, max_frequencies)):
+                        key = (min_freq, max_freq)
+                        if key not in thread_groups:
+                            thread_groups[key] = []
+                        thread_groups[key].append(i)
+
+                    # Display thread groups with their frequency ranges
+                    for (min_freq, max_freq), threads in thread_groups.items():
+                        thread_ranges = []
+                        start = threads[0]
+                        for i in range(1, len(threads)):
+                            if threads[i] != threads[i-1] + 1:
+                                end = threads[i-1]
+                                if start == end:
+                                    thread_ranges.append(f"Thread {start}")
+                                else:
+                                    thread_ranges.append(f"Thread {start}-{end}")
+                                start = threads[i]
+                        end = threads[-1]
+                        if start == end:
+                            thread_ranges.append(f"Thread {start}")
+                        else:
+                            thread_ranges.append(f"Thread {start}-{end}")
+
+                        self.widget_factory.create_label(
+                            right_column, text=f"{', '.join(thread_ranges)}: {min_freq:.2f} MHz - {max_freq:.2f} MHz")
 
             self.logger.info("Monitor widgets created.")
         except Exception as e:

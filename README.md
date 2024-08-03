@@ -15,7 +15,7 @@ This project is in early development so some things might not work as expected.
 
 <img src="images/ClockSpeeds-Preview.png" alt="Sample Image">
 
-<img src="images/ClockSpeeds-Preview2.png" alt="Sample Image">
+<img src="images/ClockSpeeds-Preview2.png" alt="Sample Image" width=539 height=643>
 
 - **Control CPU:** 
 * Adjust CPU the minimum and maximum frequencies,

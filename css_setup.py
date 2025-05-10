@@ -141,9 +141,6 @@ class CssManager:
         # Create a CSS provider for applying styles
         self.css_provider = Gtk.CssProvider()
 
-        # Get the list of valid CSS themes installed on the system
-        self.valid_css_themes = self.get_installed_gtk_css()
-
         # Apply the default system CSS on startup
         self.apply_css(self.CSS_SYSTEM)
 
@@ -156,54 +153,10 @@ class CssManager:
             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
 
-    def apply_theme(self, css_name=None):
-        # Apply the specified theme and ensure system CSS is always applied
+    def apply_theme(self):
+        # Apply basic system CSS while respecting system theme
         try:
-            if css_name is None:
-                css_name = self.load_css_config()
-            self.logger.info(f"Applying CSS: {css_name}")
-            settings = Gtk.Settings.get_default()
-            settings.set_property("gtk-theme-name", css_name)
+            self.logger.info("Applying system CSS")
             self.apply_css(self.CSS_SYSTEM)
         except Exception as e:
             self.logger.error(f"Error applying CSS: {e}")
-
-    def is_valid_css(self, css_name):
-        # Check if the provided CSS name is a valid installed theme
-        return css_name in self.valid_css_themes
-
-    def save_css_config(self, css_name):
-        # Save the selected CSS theme to the configuration file
-        try:
-            if self.is_valid_css(css_name):
-                self.config_manager.set_setting('CSS', 'selected_css', css_name)
-            else:
-                self.logger.info(f"Attempted to save invalid CSS theme: {css_name}")
-        except Exception as e:
-            self.logger.error(f"Error saving CSS configuration: {e}")
-
-    def load_css_config(self):
-        # Load the selected CSS theme from the configuration file
-        try:
-            css_name = self.config_manager.get_setting('CSS', 'selected_css', default=None)
-            if not self.is_valid_css(css_name):
-                self.logger.info(f"Attempted to load invalid CSS theme: {css_name}")
-            return css_name
-        except Exception as e:
-            self.logger.error(f"Error loading CSS configuration: {e}")
-
-    def get_installed_gtk_css(self):
-        # Get a list of installed GTK themes by searching the theme directories
-        try:
-            theme_dirs = ['/usr/share/themes', os.path.expanduser('~/.themes')]
-            themes = set()
-            
-            for theme_dir in theme_dirs:
-                if os.path.isdir(theme_dir):
-                    for theme in os.listdir(theme_dir):
-                        themes.add(theme)
-
-            return sorted(themes)
-        except Exception as e:
-            self.logger.error(f"Error fetching installed GTK themes: {e}")
-            return []

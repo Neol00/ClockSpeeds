@@ -60,8 +60,16 @@ class GlobalState:
 
     def is_ryzen_smu_installed(self):
         # Check if the ryzen_smu module is installed using DKMS
-        result = subprocess.run(["dkms", "status", "ryzen_smu"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        return "installed" in result.stdout.decode()
+        try:
+            result = subprocess.run(["dkms", "status", "ryzen_smu"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            return "installed" in result.stdout.decode()
+        except FileNotFoundError:
+            # dkms command not found, which is expected on non-dkms systems like ARM
+            self.logger.info("dkms command not found, assuming ryzen_smu is not installed")
+            return False
+        except Exception as e:
+            self.logger.error(f"Error checking ryzen_smu installation: {e}")
+            return False
 
     def save_settings(self):
         # Save the current settings to the configuration file

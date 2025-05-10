@@ -21,7 +21,7 @@ gi.require_version('Gtk', '4.0')
 from gi.repository import Gtk, GLib
 
 class SettingsWindow:
-    def __init__(self, config_manager, logger, global_state, gui_components, widget_factory, settings_applier, cpu_manager, scale_manager, css_manager):
+    def __init__(self, config_manager, logger, global_state, gui_components, widget_factory, settings_applier, cpu_manager, scale_manager):
         # References to instances
         self.config_manager = config_manager
         self.logger = logger
@@ -31,7 +31,6 @@ class SettingsWindow:
         self.settings_applier = settings_applier
         self.cpu_manager = cpu_manager
         self.scale_manager = scale_manager
-        self.css_manager = css_manager
 
         # Call methods on startup
         self.setup_main_settings_window()
@@ -79,10 +78,9 @@ class SettingsWindow:
             self.logger.error(f"Error creating settings notebook: {e}")
 
     def create_settings_tabs(self):
-        # Create the general and theme tabs
+        # Create the general tab only (removed theme tab)
         try:
             self.general_tab = self.widget_factory.create_settings_tab(self.notebook, "General")
-            self.css_tab = self.widget_factory.create_settings_tab(self.notebook, "Theme")
         except Exception as e:
             self.logger.error(f"Error creating settings tabs: {e}")
 
@@ -130,16 +128,6 @@ class SettingsWindow:
             interval_spinbutton = self.widget_factory.create_spinbutton(
                 general_fixed, self.cpu_manager.update_interval, 0.1, 20.0, 0.1, 1, 0.1, 1, self.on_interval_changed, x=40, y=155, margin_bottom=10)
 
-            # Create the CSS drop down
-            css_values = self.css_manager.get_installed_gtk_css()
-            css_dropdown = self.widget_factory.create_dropdown(
-                self.css_tab, css_values, self.on_css_change, x=0, y=0, margin_start=10, margin_end=10, margin_top=20, margin_bottom=20, hexpand=True, vexpand=True)
-
-            # Set the active CSS theme
-            saved_css = self.css_manager.load_css_config()
-            if saved_css in css_values:
-                active_index = css_values.index(saved_css)
-                css_dropdown.set_active(active_index)
         except Exception as e:
             self.logger.error(f"Error setting up settings window GUI: {e}")
 
@@ -272,19 +260,3 @@ class SettingsWindow:
         # Update the interval value when the spinbutton value changes
         new_interval = round(spinbutton.get_value(), 1)
         self.cpu_manager.set_update_interval(new_interval)
-
-    def on_css_change(self, combo):
-        # Handle the change of CSS theme from the dropdown
-        try:
-            model = combo.get_model()
-            iter = combo.get_active_iter()
-
-            if iter is not None:
-                css = model[iter][0]
-                self.css_manager.save_css_config(css)
-                self.css_manager.apply_theme(css)
-                self.logger.info(f"CSS changed to: {css}")
-            else:
-                self.logger.info("No css selected.")
-        except Exception as e:
-            self.logger.error(f"Error changing css: {e}")

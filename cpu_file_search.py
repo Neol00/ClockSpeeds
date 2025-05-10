@@ -167,13 +167,24 @@ class CPUFileSearch:
 
     def load_paths_from_cache(self, cached_directories):
         # Load cached paths for various CPU files
-        self.cpu_directory = cached_directories["cpu_directory"]
-        self.intel_boost_path = cached_directories["intel_boost_path"]
-        self.package_temp_file = cached_directories["package_temp_file"]
-        self.proc_files = cached_directories["proc_files"]
-        self.intel_tdp_files = cached_directories["intel_tdp_files"]
-        self.cache_files = cached_directories["cache_files"]
-        self.cpu_files = {key: {int(k): v for k, v in value.items()} for key, value in cached_directories["cpu_files"].items()}
+        self.cpu_directory = cached_directories.get("cpu_directory")
+        self.intel_boost_path = cached_directories.get("intel_boost_path")
+        self.package_temp_file = cached_directories.get("package_temp_file")
+        self.proc_files = cached_directories.get("proc_files", {})
+        self.intel_tdp_files = cached_directories.get("intel_tdp_files", {})
+        self.cache_files = cached_directories.get("cache_files", {})
+        
+        # Handle potential missing keys in the cached data
+        cpu_files = cached_directories.get("cpu_files", {})
+        self.cpu_files = {}
+        for key in ['scaling_max_files', 'scaling_min_files', 'speed_files', 'governor_files', 
+                    'cpuinfo_max_files', 'cpuinfo_min_files', 'available_governors_files', 
+                    'boost_files', 'package_throttle_time_files', 'epb_files']:
+            if key in cpu_files:
+                self.cpu_files[key] = {int(k): v for k, v in cpu_files[key].items()}
+            else:
+                self.cpu_files[key] = {}
+        
         self.cpu_type = "Intel" if self.intel_boost_path else "Other"
 
         # Validate the loaded paths
@@ -182,20 +193,41 @@ class CPUFileSearch:
     def validate_loaded_paths(self):
         # Validate that the necessary paths are loaded correctly
         errors = []
+        should_reinitialize = False
 
         if not self.cpu_directory:
             errors.append("CPU directory is not set.")
+            should_reinitialize = True
         if not any(self.cpu_files['scaling_max_files'].values()):
             errors.append("Min or max frequency files are not set for any thread.")
+            should_reinitialize = True
         if not self.proc_files['stat']:
             errors.append("/proc/stat file is not set.")
-        if not self.package_temp_file:
-            errors.append("Package temperature file is not set.")
+            should_reinitialize = True
         
-        if errors:
+        # Package temperature file is optional, don't raise error for it
+        if not self.package_temp_file:
+            self.logger.info("Package temperature file is not set. This is common on some systems.")
+        
+        # If we encountered critical errors that would prevent proper functioning
+        if should_reinitialize:
             for error in errors:
                 self.logger.error(error)
-            raise RuntimeError("Failed to load necessary CPU paths and files.")
+            self.logger.warning("Some essential CPU paths are missing, reinitializing...")
+            # Clear the cache file to force reinitialization
+            if os.path.exists(self.directory_cache.cache_file_path):
+                try:
+                    os.remove(self.directory_cache.cache_file_path)
+                    self.logger.info("Removed invalid cache file to reinitialize paths")
+                except Exception as e:
+                    self.logger.error(f"Failed to remove cache file: {e}")
+            # Reinitialize files
+            self.initialize_cpu_files()
+            # Validate again to make sure critical paths are now available
+            if not self.cpu_directory or not any(self.cpu_files['scaling_max_files'].values()) or not self.proc_files['stat']:
+                for error in errors:
+                    self.logger.error(error)
+                raise RuntimeError("Failed to initialize necessary CPU paths and files.")
 
     def initialize_cpu_files(self):
         # Initialize CPU files by discovering paths
@@ -272,13 +304,16 @@ class CPUFileSearch:
                         file_path = os.path.join(root, file_name)
                         self.cpu_files[file_key][thread_index] = file_path
                         found_files += 1
-                if found_files == len(self.cpufreq_file_paths):
-                    return
+                    if found_files == len(self.cpufreq_file_paths):
+                        return
 
             if found_files < len(self.cpufreq_file_paths):
                 for file_key, file_name in self.cpufreq_file_paths.items():
                     if not self.cpu_files[file_key].get(thread_index):
-                        if not (self.cpu_type == "Intel" and file_name == "boost"):
+                        # Only log boost file as warning in debug mode, it's normal for it to be missing on ARM
+                        if file_name == "boost":
+                            self.logger.debug(f'File {file_name} for thread {thread_index} does not exist at {thread_cpufreq_directory}.')
+                        else:
                             self.logger.warning(f'File {file_name} for thread {thread_index} does not exist at {thread_cpufreq_directory}.')
 
         except Exception as e:

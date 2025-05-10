@@ -47,14 +47,22 @@ class ScaleManager:
         # Initialize the cache for CPU frequencies and TDP values
         try:
             self._cached_freqs = self.cpu_manager.get_allowed_cpu_frequency()
-            if not self._cached_freqs:
-                self.logger.error("Failed to retrieve allowed CPU frequencies")
+            if not self._cached_freqs or None in self._cached_freqs:
+                self.logger.info("Failed to retrieve allowed CPU frequencies, using defaults")
+                min_allowed_freqs = [400] * self.cpu_file_search.thread_count
+                max_allowed_freqs = [5000] * self.cpu_file_search.thread_count
+                self._cached_freqs = (min_allowed_freqs, max_allowed_freqs)
             
             self._cached_tdp_values = self.cpu_manager.get_allowed_tdp_values()
             if self._cached_tdp_values is None:
-                self.logger.error("Failed to retrieve allowed TDP values")
+                self.logger.info("Failed to retrieve allowed TDP values, this is expected on non-Intel CPUs")
         except Exception as e:
             self.logger.error(f"Error initializing cache: {e}")
+            # Set default values as fallback
+            min_allowed_freqs = [400] * self.cpu_file_search.thread_count
+            max_allowed_freqs = [5000] * self.cpu_file_search.thread_count
+            self._cached_freqs = (min_allowed_freqs, max_allowed_freqs)
+            self._cached_tdp_values = 105  # Default TDP in watts
 
     def setup_gui_components(self):
         # Set up references to GUI components from the shared dictionary
@@ -163,18 +171,29 @@ class ScaleManager:
             if self._cached_freqs is None:
                 self._initialize_cache()
 
-            min_allowed_freqs, max_allowed_freqs = self._cached_freqs
-
-            # Ensure that the thread number is valid
-            if thread_num is None or thread_num >= len(min_allowed_freqs):
-                self.logger.error(f"Allowed frequencies for thread {thread_num} not found")
-                return
+            # Handle case where cached_freqs is None
+            if self._cached_freqs is None:
+                # Use default values
+                min_allowed_freq = 400 # 400 Mhz
+                max_allowed_freq = 5000  # 5 GHz
+            else:
+                min_allowed_freqs, max_allowed_freqs = self._cached_freqs
+                
+                # Ensure that the thread number is valid
+                if thread_num is None or thread_num >= len(min_allowed_freqs):
+                    self.logger.warning(f"Allowed frequencies for thread {thread_num} not found, using defaults")
+                    min_allowed_freq = 400 # 400 Mhz
+                    max_allowed_freq = 5000  # 5 GHz
+                else:
+                    min_allowed_freq = min_allowed_freqs[thread_num]
+                    max_allowed_freq = max_allowed_freqs[thread_num]
 
             # Set the range for min and max scales if they are provided and valid
             if min_scale and max_scale:
-                min_scale.set_range(min_allowed_freqs[thread_num], max_allowed_freqs[thread_num])
-                max_scale.set_range(min_allowed_freqs[thread_num], max_allowed_freqs[thread_num])
+                min_scale.set_range(min_allowed_freq, max_allowed_freq)
+                max_scale.set_range(min_allowed_freq, max_allowed_freq)
 
+            # For TDP scale
             if self._cached_tdp_values is None:
                 self._initialize_cache()
 
@@ -183,6 +202,9 @@ class ScaleManager:
                 max_tdp_value_w = self._cached_tdp_values
                 if max_tdp_value_w is not None:
                     self.tdp_scale.set_range(self.global_state.TDP_SCALE_MIN, max_tdp_value_w)
+                else:
+                    # Use default TDP value
+                    self.tdp_scale.set_range(self.global_state.TDP_SCALE_MIN, self.global_state.TDP_SCALE_MAX)
         except Exception as e:
             self.logger.error(f"Error setting limited range: {e}")
 

@@ -172,10 +172,28 @@ class CPUManager:
 
             if not cpuinfo_file:
                 self.logger.error("cpuinfo file not found.")
-                return
+                # Return default values for ARM or unknown architectures
+                return {
+                    "Model Name": "Unknown CPU Model",
+                    "Cache Sizes": {},
+                    "Total RAM (MB)": 0,
+                    "Min (MHz)": [1000] * self.cpu_file_search.thread_count,
+                    "Max (MHz)": [2000] * self.cpu_file_search.thread_count,
+                    "Physical Cores": self.cpu_file_search.thread_count // 2 or 1,
+                    "Virtual Cores (Threads)": self.cpu_file_search.thread_count
+                }
+                
             if not meminfo_file:
                 self.logger.error("meminfo file not found.")
-                return
+                return {
+                    "Model Name": "Unknown CPU Model",
+                    "Cache Sizes": {},
+                    "Total RAM (MB)": 0,
+                    "Min (MHz)": [1000] * self.cpu_file_search.thread_count,
+                    "Max (MHz)": [2000] * self.cpu_file_search.thread_count,
+                    "Physical Cores": self.cpu_file_search.thread_count // 2 or 1,
+                    "Virtual Cores (Threads)": self.cpu_file_search.thread_count
+                }
 
             # Parse the CPU information
             model_name, cache_sizes, physical_cores, virtual_cores = self.parse_cpu_info(cpuinfo_file)
@@ -183,17 +201,33 @@ class CPUManager:
             # Get the allowed CPU frequencies
             min_allowed_freqs, max_allowed_freqs = self.get_allowed_cpu_frequency()
             
+            # If frequencies couldn't be determined, use default values
+            if not min_allowed_freqs or not max_allowed_freqs:
+                min_allowed_freqs = [1000] * self.cpu_file_search.thread_count
+                max_allowed_freqs = [2000] * self.cpu_file_search.thread_count
+                
             # Read the total RAM from the meminfo file
             total_ram = self.read_total_ram(meminfo_file)
 
             # Filter out any None cache sizes
-            cache_sizes = {k: v for k, v in cache_sizes.items() if v is not None}
+            if cache_sizes:
+                cache_sizes = {k: v for k, v in cache_sizes.items() if v is not None}
+            else:
+                cache_sizes = {}
+
+            # If model_name is None (can happen on ARM), use a default
+            if not model_name:
+                model_name = "ARM Processor"
+
+            # If physical_cores is None or 0, estimate based on thread count
+            if not physical_cores:
+                physical_cores = self.cpu_file_search.thread_count // 2 or 1
 
             # Create a dictionary with the CPU information
             cpu_info = {
                 "Model Name": model_name,
                 "Cache Sizes": cache_sizes,
-                "Total RAM (MB)": total_ram,
+                "Total RAM (MB)": total_ram or 0,
                 "Min (MHz)": min_allowed_freqs,
                 "Max (MHz)": max_allowed_freqs,
                 "Physical Cores": physical_cores,
@@ -204,7 +238,16 @@ class CPUManager:
 
         except Exception as e:
             self.logger.error(f"Error retrieving CPU info: {e}")
-            return None
+            # Return a default set of values as fallback
+            return {
+                "Model Name": "Unknown CPU Model",
+                "Cache Sizes": {},
+                "Total RAM (MB)": 0,
+                "Min (MHz)": [1000] * self.cpu_file_search.thread_count,
+                "Max (MHz)": [2000] * self.cpu_file_search.thread_count,
+                "Physical Cores": self.cpu_file_search.thread_count // 2 or 1,
+                "Virtual Cores (Threads)": self.cpu_file_search.thread_count
+            }
 
     def parse_cpu_info(self, cpuinfo_file):
         # Parse the CPU information file to extract model name and core counts
@@ -260,35 +303,52 @@ class CPUManager:
                 max_freq_file = self.cpu_file_search.cpu_files['cpuinfo_max_files'].get(i)
 
                 if not min_freq_file or not max_freq_file:
-                    self.logger.error(f"Min or max frequency file not found for thread {i}")
+                    # Default values when the files aren't found
+                    min_allowed_freqs.append(400)  # 400 MHz
+                    max_allowed_freqs.append(5000)  # 5 GHz
                     continue
 
-                with open(min_freq_file) as min_file:
-                    min_freq_mhz = int(min_file.read()) / 1000  # Convert from kHz to MHz
-                    min_allowed_freqs.append(min_freq_mhz)
+                try:
+                    with open(min_freq_file) as min_file:
+                        min_freq_mhz = int(min_file.read()) / 1000  # Convert from kHz to MHz
+                        min_allowed_freqs.append(min_freq_mhz)
+                except (IOError, ValueError) as e:
+                    self.logger.warning(f"Error reading min frequency for thread {i}: {e}")
+                    min_allowed_freqs.append(1000)  # Default to 1 GHz
 
-                with open(max_freq_file) as max_file:
-                    max_freq_mhz = int(max_file.read()) / 1000  # Convert from kHz to MHz
-                    max_allowed_freqs.append(max_freq_mhz)
+                try:
+                    with open(max_freq_file) as max_file:
+                        max_freq_mhz = int(max_file.read()) / 1000  # Convert from kHz to MHz
+                        max_allowed_freqs.append(max_freq_mhz)
+                except (IOError, ValueError) as e:
+                    self.logger.warning(f"Error reading max frequency for thread {i}: {e}")
+                    max_allowed_freqs.append(5000)  # Default to 5 GHz
+
+            if not min_allowed_freqs or not max_allowed_freqs:
+                self.logger.warning("No valid CPU frequency files found, using defaults")
+                return ([400] * self.cpu_file_search.thread_count, 
+                       [5000] * self.cpu_file_search.thread_count)
 
             return min_allowed_freqs, max_allowed_freqs
 
         except Exception as e:
             self.logger.error(f"Error getting CPU frequencies: {e}")
-            return None, None
+            return ([400] * self.cpu_file_search.thread_count, 
+                   [5000] * self.cpu_file_search.thread_count)
 
     def get_allowed_tdp_values(self):
         # First, check the CPU type
         cpu_type = self.cpu_file_search.cpu_type
 
-        # If CPU type is "Other", do not proceed with TDP check and log no error
-        if cpu_type == "Other":
+        # If CPU type is not Intel, return None without logging an error
+        if cpu_type != "Intel":
+            self.logger.debug("TDP is only supported on Intel CPUs, not logging as error.")
             return None
 
         # Get the allowed TDP values for Intel CPUs
         max_tdp_file = self.cpu_file_search.intel_tdp_files['max_tdp']
         if not max_tdp_file or not os.path.exists(max_tdp_file):
-            self.logger.error("Intel Max TDP file not found.")
+            self.logger.info("Intel Max TDP file not found. This is expected on non-Intel systems.")
             return None
 
         try:
@@ -461,7 +521,11 @@ class CPUManager:
                             return temp_str, temp_celsius
                         else:
                             self.logger.error("Temperature reading is not a valid number.")
-            self.logger.error("No package temperature file found.")
+                else:
+                    self.logger.warning(f"Package temperature file {self.cpu_file_search.package_temp_file} does not exist.")
+            else:
+                # More informative message for ARM or other unsupported systems
+                self.logger.info("No package temperature file found. This is common on ARM or some virtual environments.")
         except Exception as e:
             self.logger.error(f"Error parsing temperature file: {e}")
         return None, None
@@ -478,7 +542,9 @@ class CPUManager:
                     self.logger.warning("Package temperature not found in GUI components")
                 return temp_celsius
             else:
-                self.logger.warning("Unable to read package temperature")
+                # If temperature info is unavailable, just display "N/A" in the GUI
+                if self.package_temp_label is not None:
+                    self.package_temp_label.set_text("CPU Temperature: N/A")
         except Exception as e:
             self.logger.error(f"Error reading package temperature: {e}")
         return None

@@ -68,7 +68,7 @@ class ClockSpeedsApp(Gtk.Application):
             self.config_manager, self.logger)
         self.settings_window = SettingsWindow(
             self.config_manager, self.logger, self.global_state, self.gui_components, self.widget_factory,
-            self.settings_applier, self.cpu_manager, self.scale_manager, self.css_manager)
+            self.settings_applier, self.cpu_manager, self.scale_manager)
 
         self.is_tdp_installed()
 
@@ -81,6 +81,9 @@ class ClockSpeedsApp(Gtk.Application):
             self.window.set_resizable(False)
             self.window.connect("close-request", self.close_main_window)
             self.window.present()
+
+            # Apply system CSS
+            self.css_manager.apply_theme()
 
             self.call_main_methods()
         except Exception as e:
@@ -477,6 +480,9 @@ class ClockSpeedsApp(Gtk.Application):
             if temp is not None:
                 self.package_temp_label.set_text(f"CPU Temperature: {temp:.1f}°C")
 
+            else:
+                self.package_temp_label.set_text("CPU Temperature: N/A")
+
             # Update governor
             self.cpu_manager.get_current_governor()
 
@@ -700,10 +706,19 @@ class ClockSpeedsApp(Gtk.Application):
             self.logger.error(f"Error updating CPU widgets: {e}")
 
     def debounced_update_check_all_state(self, delay=10):
-        if self.debounce_timeout_id is not None:
-            GLib.source_remove(self.debounce_timeout_id)
-        
-        self.debounce_timeout_id = GLib.timeout_add(delay, self.update_check_all_state, None)
+        try:
+            if hasattr(self, 'debounce_timeout_id') and self.debounce_timeout_id is not None:
+                # Check if the source is still valid before removing it
+                if GLib.main_context_default().find_source_by_id(self.debounce_timeout_id):
+                    GLib.source_remove(self.debounce_timeout_id)
+                self.debounce_timeout_id = None
+            
+            # Set the new timeout
+            self.debounce_timeout_id = GLib.timeout_add(delay, self.update_check_all_state, None)
+        except Exception as e:
+            self.logger.error(f"Error in debounced_update_check_all_state: {e}")
+            # Make sure we at least call the function if debouncing fails
+            self.update_check_all_state(None)
 
     def on_check_all_toggled(self, button):
         # Toggle all thread checkbuttons based on the state of Check All checkbutton
@@ -740,10 +755,15 @@ class ClockSpeedsApp(Gtk.Application):
             self.tdp_installed = False
             if self.cpu_file_search.cpu_type == "Intel":
                 self.tdp_installed = True
-            elif self.cpu_file_search.cpu_type == "Other" and self.global_state.is_ryzen_smu_installed():
-                self.tdp_installed = True
+            elif self.cpu_file_search.cpu_type == "Other":
+                try:
+                    self.tdp_installed = self.global_state.is_ryzen_smu_installed()
+                except Exception as e:
+                    self.logger.error(f"Error checking ryzen_smu: {e}")
+                    self.tdp_installed = False
         except Exception as e:
             self.logger.error(f"Error checking if TDP can be set: {e}")
+            self.tdp_installed = False
 
     def set_tdp_widgets(self):
         # Sets the visibility of the TDP widgets based on tdp_installed

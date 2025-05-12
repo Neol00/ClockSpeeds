@@ -97,36 +97,28 @@ class SettingsWindow:
             # Create the info button for the Disable Scale Limits checkbutton
             info_button_scale = self.widget_factory.create_info_button(
                 general_fixed, self.scale_info_window, x=160, y=10)
-            
-            # Create the Sync Scales checkbutton
-            self.sync_scales_checkbutton = self.widget_factory.create_checkbutton(
-                general_fixed, "Sync All Scales", self.global_state.sync_scales, self.scale_manager.on_sync_scales_change, x=5, y=40)
-
-            # Create the info button for the Sync Scales checkbutton
-            info_button_sync = self.widget_factory.create_info_button(
-                general_fixed, self.sync_info_window, x=160, y=40)
 
             # Create the MHz to GHz toggle checkbutton
             self.mhz_to_ghz_checkbutton = self.widget_factory.create_checkbutton(
-                general_fixed, "Display GHz", self.global_state.display_ghz, self.on_mhz_to_ghz_toggle, x=5, y=70)
+                general_fixed, "Display GHz", self.global_state.display_ghz, self.on_mhz_to_ghz_toggle, x=5, y=40)
 
             # Create the info button for the Sync Scales checkbutton
             info_button_mhz_to_ghz = self.widget_factory.create_info_button(
-                general_fixed, self.mhz_to_ghz_info_window, x=160, y=70)
+                general_fixed, self.mhz_to_ghz_info_window, x=160, y=40)
 
             # Create the Apply On Boot checkbutton
             self.apply_on_boot_checkbutton = self.widget_factory.create_checkbutton(
-                general_fixed, "Apply On Boot", None, self.on_apply_on_boot_toggle, x=5, y=100)
+                general_fixed, "Apply On Boot", None, self.on_apply_on_boot_toggle, x=5, y=70)
 
             # Create the info button for the Apply On Boot checkbutton
             info_button_apply_boot = self.widget_factory.create_info_button(
-                general_fixed, self.apply_boot_info_window, x=160, y=100)
+                general_fixed, self.apply_boot_info_window, x=160, y=70)
 
             # Create the update interval label and spinbutton
             interval_label = self.widget_factory.create_label(
-                general_fixed, "Update Interval Seconds:", x=23, y=130)
+                general_fixed, "Update Interval Seconds:", x=23, y=100)
             interval_spinbutton = self.widget_factory.create_spinbutton(
-                general_fixed, self.cpu_manager.update_interval, 0.1, 20.0, 0.1, 1, 0.1, 1, self.on_interval_changed, x=40, y=155, margin_bottom=10)
+                general_fixed, self.cpu_manager.update_interval, 0.1, 20.0, 0.1, 1, 0.1, 1, self.on_interval_changed, x=40, y=125, margin_bottom=10)
 
         except Exception as e:
             self.logger.error(f"Error setting up settings window GUI: {e}")
@@ -164,29 +156,6 @@ class SettingsWindow:
             info_window.present()
         except Exception as e:
             self.logger.error(f"Error showing Disable Scale Limits info window: {e}")
-
-    def sync_info_window(self, widget):
-        # Show the information dialog for the Sync All Scales checkbutton
-        try:
-            info_window = self.widget_factory.create_window("Information", self.settings_window, 300, 50)
-            info_box = self.widget_factory.create_box(info_window)
-            info_label = self.widget_factory.create_label(
-                info_box,
-                "Enabling this option will synchronize the minimum and maximum CPU\n"
-                "frequency scales across all threads.",
-                margin_start=10, margin_end=10, margin_top=10, margin_bottom=10)
-
-            def on_destroy(widget):
-                info_window.close()
-
-            info_button = self.widget_factory.create_button(
-                info_box, "OK", margin_start=154, margin_end=154, margin_bottom=10)
-            info_button.connect("clicked", on_destroy)
-            info_window.connect("close-request", on_destroy)
-
-            info_window.present()
-        except Exception as e:
-            self.logger.error(f"Error showing Sync All Scales info window: {e}")
 
     def mhz_to_ghz_info_window(self, widget):
         # Show the information dialog for the MHz to GHz checkbutton

@@ -583,6 +583,10 @@ class ClockSpeedsApp(Gtk.Application):
                 check_apply_box, "Check All Threads", None, self.on_check_all_toggled, margin_bottom=20)
             self.check_all_checkbutton.set_tooltip_text("Toggle all thread checkbuttons")
 
+            self.sync_scales_checkbutton = self.widget_factory.create_checkbutton(
+                check_apply_box, "Sync All Scales", None, self.scale_manager.on_sync_scales_change, margin_bottom=20)
+            self.sync_scales_checkbutton.set_tooltip_text("Synchronize minimum and maximum frequency scales across all threads")
+
             self.apply_max_min_button = self.widget_factory.create_button(
                 check_apply_box, "Apply Speed Limits", self.cpu_manager.apply_cpu_clock_speed_limits, margin_start=33, margin_bottom=20)
             self.apply_max_min_button.set_tooltip_text("Apply minimum and maximum speed limits")
@@ -665,6 +669,7 @@ class ClockSpeedsApp(Gtk.Application):
             self.gui_components['cpu_min_scales'] = self.cpu_min_scales
             self.gui_components['cpu_max_scales'] = self.cpu_max_scales
             self.gui_components['apply_max_min_button'] = self.apply_max_min_button
+            self.gui_components['sync_scales_checkbutton'] = self.sync_scales_checkbutton
             self.gui_components['governor_dropdown'] = self.governor_dropdown
             self.gui_components['boost_checkbutton'] = self.boost_checkbutton
             self.gui_components['tdp_scale'] = self.tdp_scale

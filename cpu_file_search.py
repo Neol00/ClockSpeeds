@@ -361,31 +361,255 @@ class CPUFileSearch:
 
     def find_thermal_file(self):
         # Find CPU thermal files
-        potential_paths = ['/sys/class/', '/sys/devices/']
+        potential_paths = [
+            '/sys/class/thermal/',  # Most common location for thermal zones
+            '/sys/class/',          # Fallback to broader search
+            '/sys/devices/',        # Your ARM device structure
+        ]
+        
+        # Priority list for temperature files/sensors
+        # Higher priority items are checked first
+        cpu_sensor_priorities = [
+            # Intel/AMD patterns
+            ('package', 'temp'),
+            ('coretemp', 'temp'),
+            ('cpu', 'package'),
+            ('tctl', ''),  # AMD Ryzen thermal control
+            ('tccd', ''),  # AMD Ryzen CCD thermal
+            ('die', 'temp'),
+            
+            # ARM patterns
+            ('cpu', 'thermal'),
+            ('cpu', 'temp'),
+            ('soc', 'thermal'),
+            ('cluster', 'thermal'),
+            ('thermal', 'cpu'),
+            ('cpu_thermal', ''),
+            ('tsens', 'cpu'),
+            
+            # Generic patterns (lower priority)
+            ('cpu', ''),
+            ('thermal', ''),
+            ('temp', ''),
+        ]
+        
         try:
+            # First, try thermal zones (most reliable method)
+            thermal_zone_file = self._find_thermal_zone_file()
+            if thermal_zone_file:
+                self.package_temp_file = thermal_zone_file
+                self.logger.info(f"Found thermal zone file: {thermal_zone_file}")
+                return
+            
+            # If thermal zones don't work, search through device tree
             for base_path in potential_paths:
-                for root, dirs, files in self.directory_cache.cached_directory_walk(base_path):
-                    for file in files:
-                        if file.startswith('temp') and file.endswith('_input'):
-                            full_path = os.path.join(root, file)
-                            label_path = file.replace('_input', '_label')
-                            full_label_path = os.path.join(root, label_path)
-                            if os.path.exists(full_label_path):
-                                with open(full_label_path, 'r') as label_file:
-                                    label = label_file.read().strip().lower()
-                                    if self.is_relevant_temp_file(label):
-                                        self.package_temp_file = full_path
-                                        return
-        except IOError as e:
-            self.logger.error(f"IOError while finding other thermal files: {e}")
+                if not os.path.exists(base_path):
+                    continue
+                    
+                # Search for temperature files
+                temp_files = self._search_temperature_files(base_path)
+                
+                if temp_files:
+                    # Sort by priority and select the best match
+                    best_file = self._select_best_thermal_file(temp_files, cpu_sensor_priorities)
+                    if best_file:
+                        self.package_temp_file = best_file
+                        self.logger.info(f"Found thermal file: {best_file}")
+                        return
+        
         except Exception as e:
-            self.logger.error(f"Error finding other thermal files: {e}")
+            self.logger.error(f"Error finding thermal files: {e}")
+        
         self.logger.warning('No thermal files found for CPU temperature monitoring.')
 
+    def _find_thermal_zone_file(self):
+        """Find thermal zone file - most reliable method for most systems"""
+        thermal_zone_base = '/sys/class/thermal/'
+        
+        if not os.path.exists(thermal_zone_base):
+            return None
+        
+        try:
+            # Look for thermal zones
+            for item in os.listdir(thermal_zone_base):
+                if item.startswith('thermal_zone'):
+                    zone_path = os.path.join(thermal_zone_base, item)
+                    temp_file = os.path.join(zone_path, 'temp')
+                    type_file = os.path.join(zone_path, 'type')
+                    
+                    if os.path.exists(temp_file) and os.path.exists(type_file):
+                        try:
+                            with open(type_file, 'r') as f:
+                                zone_type = f.read().strip().lower()
+                                
+                            # Check if this thermal zone is CPU-related
+                            if self._is_cpu_related_thermal(zone_type):
+                                # Verify the temperature file is readable
+                                with open(temp_file, 'r') as f:
+                                    temp_value = f.read().strip()
+                                    if temp_value.isdigit():
+                                        return temp_file
+                        except (IOError, OSError):
+                            continue
+        
+        except Exception as e:
+            self.logger.debug(f"Error searching thermal zones: {e}")
+        
+        return None
+
+    def _search_temperature_files(self, base_path):
+        """Search for temperature files in the given path"""
+        temp_files = []
+        
+        try:
+            for root, dirs, files in self.directory_cache.cached_directory_walk(base_path):
+                # Look for various temperature file patterns
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    
+                    # Common temperature file patterns
+                    if any(pattern in file.lower() for pattern in ['temp', 'thermal']):
+                        if any(suffix in file for suffix in ['_input', '_temp', '_temperature']):
+                            # Check if file contains CPU-related info
+                            parent_dir = os.path.basename(root).lower()
+                            if self._is_cpu_related_path(root, file):
+                                try:
+                                    # Verify file is readable and contains valid temperature
+                                    with open(file_path, 'r') as f:
+                                        content = f.read().strip()
+                                        if content.isdigit() and int(content) > 0:
+                                            temp_files.append({
+                                                'path': file_path,
+                                                'root': root,
+                                                'file': file,
+                                                'parent_dir': parent_dir
+                                            })
+                                except (IOError, OSError, ValueError):
+                                    continue
+        
+        except Exception as e:
+            self.logger.debug(f"Error searching temperature files in {base_path}: {e}")
+        
+        return temp_files
+
+    def _is_cpu_related_thermal(self, zone_type):
+        """Check if a thermal zone type is CPU-related"""
+        zone_type = zone_type.lower()
+        
+        # Intel/AMD patterns
+        if self.cpu_type == "Intel":
+            return any(pattern in zone_type for pattern in ['package', 'cpu', 'coretemp', 'x86_pkg_temp'])
+        
+        # AMD patterns
+        if 'amd' in zone_type or any(pattern in zone_type for pattern in ['tctl', 'tccd', 'k10temp']):
+            return True
+        
+        # ARM patterns
+        if any(pattern in zone_type for pattern in ['cpu', 'cluster', 'soc']):
+            return True
+        
+        # Generic patterns
+        return any(pattern in zone_type for pattern in ['cpu', 'processor', 'core'])
+
+    def _is_cpu_related_path(self, root, file):
+        """Check if a file path is CPU-related"""
+        full_path = os.path.join(root, file).lower()
+        parent_dir = os.path.basename(root).lower()
+        
+        # Check for CPU-related patterns in the path
+        cpu_patterns = [
+            'cpu', 'coretemp', 'package', 'tctl', 'tccd', 'k10temp',
+            'thermal/cpu', 'cpu_thermal', 'cluster', 'soc', 'tsens'
+        ]
+        
+        # Check file content description if available
+        try:
+            # Look for label or name files in the same directory
+            for label_file in ['label', 'name', 'type']:
+                label_path = os.path.join(root, file.replace('_input', f'_{label_file}'))
+                if os.path.exists(label_path):
+                    with open(label_path, 'r') as f:
+                        label_content = f.read().strip().lower()
+                        if self._is_cpu_related_thermal(label_content):
+                            return True
+            
+            # Check hwmon device name
+            if 'hwmon' in root:
+                name_file = os.path.join(root, 'name')
+                if os.path.exists(name_file):
+                    with open(name_file, 'r') as f:
+                        name_content = f.read().strip().lower()
+                        if self._is_cpu_related_thermal(name_content):
+                            return True
+        
+        except (IOError, OSError):
+            pass
+        
+        # Check path components
+        return any(pattern in full_path for pattern in cpu_patterns)
+
+    def _select_best_thermal_file(self, temp_files, priorities):
+        """Select the best thermal file based on priority list"""
+        if not temp_files:
+            return None
+        
+        # Score each file based on priority patterns
+        scored_files = []
+        
+        for file_info in temp_files:
+            score = 0
+            path = file_info['path'].lower()
+            parent_dir = file_info['parent_dir'].lower()
+            
+            # Check against priority list
+            for i, (pattern1, pattern2) in enumerate(priorities):
+                priority_score = len(priorities) - i  # Higher score for higher priority
+                
+                if pattern1 in path and (not pattern2 or pattern2 in path):
+                    score += priority_score * 2  # Bonus for exact match
+                elif pattern1 in parent_dir:
+                    score += priority_score
+            
+            # Bonus for commonly reliable patterns
+            if 'thermal_zone' in path:
+                score += 100  # Thermal zones are usually reliable
+            if 'hwmon' in path:
+                score += 50  # hwmon devices are usually stable
+            
+            # Intel/AMD specific bonuses
+            if self.cpu_type == "Intel":
+                if 'package' in path or 'coretemp' in path:
+                    score += 30
+            else:  # AMD or Other
+                if 'tctl' in path or 'k10temp' in path:
+                    score += 30
+            
+            scored_files.append((score, file_info))
+        
+        # Sort by score (descending) and return the best match
+        scored_files.sort(key=lambda x: x[0], reverse=True)
+        
+        if scored_files:
+            best_score, best_file = scored_files[0]
+            self.logger.info(f"Selected thermal file with score {best_score}: {best_file['path']}")
+            return best_file['path']
+        
+        return None
+
     def is_relevant_temp_file(self, label):
-        # Determine if a temperature file is relevant
-        return (self.cpu_type == 'Intel' and ('package' in label or 'cpu' in label)) or \
-               (self.cpu_type != 'Intel' and 'tctl' in label)
+        # Enhanced version of the existing method
+        label = label.lower()
+        
+        # Intel patterns
+        if self.cpu_type == 'Intel':
+            return any(pattern in label for pattern in ['package', 'cpu', 'coretemp', 'core'])
+        
+        # AMD patterns
+        if any(pattern in label for pattern in ['tctl', 'tccd', 'k10temp', 'amdgpu']):
+            return True
+        
+        # ARM and other patterns
+        return any(pattern in label for pattern in ['cpu', 'cluster', 'soc', 'thermal', 'core'])
 
     def find_intel_tdp_files(self):
         # Find Intel TDP files if applicable

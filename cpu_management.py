@@ -250,34 +250,241 @@ class CPUManager:
             }
 
     def parse_cpu_info(self, cpuinfo_file):
-        # Parse the CPU information file to extract model name and core counts
+        """Parse the CPU information file to extract model name and core counts with comprehensive detection"""
         try:
-            model_name = None  # To store the CPU model name
-            # Dictionary to store cache sizes
+            model_name = None
             cache_sizes = {
                 "L1 Data": self.cpu_file_search.cache_files.get("1_Data", None),
                 "L1 Instruction": self.cpu_file_search.cache_files.get("1_Instruction", None),
                 "L2 Unified": self.cpu_file_search.cache_files.get("2_Unified", None),
                 "L3 Unified": self.cpu_file_search.cache_files.get("3_Unified", None)
             }
-            physical_cores = 0  # To store the number of physical cores
-            virtual_cores = self.cpu_file_search.thread_count  # Number of virtual cores (threads)
+            physical_cores = 0
+            virtual_cores = self.cpu_file_search.thread_count
 
-            # Open the cpuinfo file and read line by line
+            # Data structures for comprehensive detection
+            physical_ids = set()
+            core_ids_per_physical = {}
+            processor_count = 0
+            cpu_cores_field = None
+            siblings_field = None
+            
+            # ARM-specific tracking
+            cpu_parts = set()
+            clusters = set()
+            
+            # Parse the cpuinfo file
             with open(cpuinfo_file, 'r') as file:
+                current_processor = {}
+                
                 for line in file:
-                    # Extract the model name
-                    if line.startswith('model name') and not model_name:
-                        model_name = line.split(':')[1].strip()
-                    # Extract the number of physical cores
-                    elif line.startswith('cpu cores') and not physical_cores:
-                        physical_cores = int(line.split(':')[1].strip())
-
+                    line = line.strip()
+                    if not line:
+                        # End of processor block, process it
+                        if current_processor:
+                            processor_count += 1
+                            
+                            # Track physical IDs and core IDs (x86/AMD)
+                            if 'physical id' in current_processor:
+                                phys_id = current_processor['physical id']
+                                physical_ids.add(phys_id)
+                                
+                                if 'core id' in current_processor:
+                                    core_id = current_processor['core id']
+                                    if phys_id not in core_ids_per_physical:
+                                        core_ids_per_physical[phys_id] = set()
+                                    core_ids_per_physical[phys_id].add(core_id)
+                            
+                            # Track ARM-specific information
+                            if 'CPU part' in current_processor:
+                                cpu_parts.add(current_processor['CPU part'])
+                            if 'cluster' in current_processor:
+                                clusters.add(current_processor['cluster'])
+                        
+                        current_processor = {}
+                        continue
+                    
+                    if ':' in line:
+                        key, value = line.split(':', 1)
+                        key = key.strip()
+                        value = value.strip()
+                        current_processor[key] = value
+                        
+                        # Extract model name (first occurrence)
+                        if key == 'model name' and not model_name:
+                            model_name = value
+                        elif key == 'Model name' and not model_name:  # ARM variant
+                            model_name = value
+                        elif key == 'cpu model' and not model_name:  # Alternative ARM
+                            model_name = value
+                        
+                        # Extract cpu cores field (x86/AMD)
+                        elif key == 'cpu cores' and cpu_cores_field is None:
+                            try:
+                                cpu_cores_field = int(value)
+                            except ValueError:
+                                pass
+                        
+                        # Extract siblings field (x86/AMD)
+                        elif key == 'siblings' and siblings_field is None:
+                            try:
+                                siblings_field = int(value)
+                            except ValueError:
+                                pass
+            
+            # Process the last processor if file doesn't end with blank line
+            if current_processor:
+                processor_count += 1
+                if 'physical id' in current_processor:
+                    phys_id = current_processor['physical id']
+                    physical_ids.add(phys_id)
+                    if 'core id' in current_processor:
+                        core_id = current_processor['core id']
+                        if phys_id not in core_ids_per_physical:
+                            core_ids_per_physical[phys_id] = set()
+                        core_ids_per_physical[phys_id].add(core_id)
+                if 'CPU part' in current_processor:
+                    cpu_parts.add(current_processor['CPU part'])
+                if 'cluster' in current_processor:
+                    clusters.add(current_processor['cluster'])
+            
+            # Determine physical cores using multiple methods
+            physical_cores = self._determine_physical_cores(
+                cpu_cores_field=cpu_cores_field,
+                siblings_field=siblings_field,
+                physical_ids=physical_ids,
+                core_ids_per_physical=core_ids_per_physical,
+                processor_count=processor_count,
+                cpu_parts=cpu_parts,
+                clusters=clusters,
+                virtual_cores=virtual_cores
+            )
+            
+            # Ensure we have valid values
+            if not model_name:
+                model_name = self._detect_cpu_model_fallback()
+            
+            if physical_cores <= 0:
+                physical_cores = max(1, virtual_cores // 2)  # Fallback assumption
+            
             return model_name, cache_sizes, physical_cores, virtual_cores
 
         except Exception as e:
             self.logger.error(f"Error parsing CPU info: {e}")
-            return None
+            # Return safe defaults
+            return ("Unknown CPU", {}, max(1, self.cpu_file_search.thread_count // 2), self.cpu_file_search.thread_count)
+
+    def _determine_physical_cores(self, cpu_cores_field, siblings_field, physical_ids, 
+                                 core_ids_per_physical, processor_count, cpu_parts, 
+                                 clusters, virtual_cores):
+        """Determine physical cores using multiple detection methods"""
+        
+        # Method 1: Use cpu cores field if available and reliable (x86/AMD)
+        if cpu_cores_field is not None and cpu_cores_field > 0:
+            # Validate against other information
+            if physical_ids:
+                total_cores_from_topology = sum(len(cores) for cores in core_ids_per_physical.values())
+                if total_cores_from_topology > 0 and abs(cpu_cores_field - total_cores_from_topology) <= 1:
+                    self.logger.info(f"Using cpu cores field: {cpu_cores_field}")
+                    return cpu_cores_field
+        
+        # Method 2: Count from physical topology (x86/AMD/some ARM)
+        if core_ids_per_physical:
+            total_cores = sum(len(cores) for cores in core_ids_per_physical.values())
+            if total_cores > 0:
+                self.logger.info(f"Determined from topology: {total_cores} physical cores")
+                return total_cores
+        
+        # Method 3: ARM cluster-based detection
+        if clusters and len(clusters) > 1:
+            # For big.LITTLE architectures, count cores per cluster
+            cores_per_cluster = processor_count // len(clusters)
+            if cores_per_cluster > 0:
+                self.logger.info(f"ARM cluster detection: {processor_count} cores in {len(clusters)} clusters")
+                return processor_count
+        
+        # Method 4: ARM CPU part detection for symmetric cores
+        if cpu_parts and len(cpu_parts) == 1:
+            # Single CPU part type suggests all cores are the same (not big.LITTLE)
+            self.logger.info(f"ARM symmetric cores detected: {processor_count} cores")
+            return processor_count
+        
+        # Method 5: Physical ID count (fallback for some systems)
+        if physical_ids:
+            # If we have physical IDs but no core topology, estimate
+            num_physical_packages = len(physical_ids)
+            cores_per_package = max(1, processor_count // num_physical_packages)
+            estimated_cores = cores_per_package * num_physical_packages
+            self.logger.info(f"Estimated from {num_physical_packages} packages: {estimated_cores} cores")
+            return estimated_cores
+        
+        # Method 6: Hyperthreading detection (x86/AMD)
+        if siblings_field is not None and siblings_field > 0:
+            # siblings field shows threads per package
+            # If siblings > cpu_cores, hyperthreading is enabled
+            if cpu_cores_field and siblings_field > cpu_cores_field:
+                # Hyperthreading detected
+                physical_cores = cpu_cores_field
+                self.logger.info(f"Hyperthreading detected: {physical_cores} cores, {siblings_field} threads")
+                return physical_cores
+            elif siblings_field == processor_count:
+                # No hyperthreading, siblings equals total processor count
+                self.logger.info(f"No hyperthreading: {siblings_field} cores")
+                return siblings_field
+        
+        # Method 7: Special case for ARM with explicit thread count
+        # On ARM, if we have more than 8 logical CPUs and no topology info,
+        # it's likely all are physical cores (ARM rarely has SMT)
+        if processor_count > 8 and not physical_ids and cpu_parts:
+            self.logger.info(f"ARM system with {processor_count} cores (likely no SMT)")
+            return processor_count
+        
+        # Method 8: Fallback - assume half are physical cores if no other method works
+        # This is conservative for x86 with hyperthreading but better than overestimating
+        fallback_cores = max(1, processor_count // 2) if processor_count > 2 else processor_count
+        self.logger.warning(f"Using fallback method: {fallback_cores} cores (from {processor_count} processors)")
+        return fallback_cores
+
+    def _detect_cpu_model_fallback(self):
+        """Fallback method to detect CPU model when not found in /proc/cpuinfo"""
+        try:
+            # Try reading from device tree (ARM systems)
+            try:
+                with open('/proc/device-tree/model', 'r') as f:
+                    model = f.read().strip().replace('\x00', '')
+                    if model:
+                        return f"ARM Device: {model}"
+            except (IOError, OSError):
+                pass
+            
+            # Try reading from DMI (x86 systems)
+            try:
+                with open('/sys/class/dmi/id/product_name', 'r') as f:
+                    product = f.read().strip()
+                    with open('/sys/class/dmi/id/product_version', 'r') as f:
+                        version = f.read().strip()
+                    if product and version:
+                        return f"{product} {version}"
+                    elif product:
+                        return product
+            except (IOError, OSError):
+                pass
+            
+            # Try CPU architecture detection
+            import platform
+            machine = platform.machine()
+            if machine.startswith('arm') or machine.startswith('aarch'):
+                return f"ARM Processor ({machine})"
+            elif machine in ['x86_64', 'AMD64']:
+                return f"x86_64 Processor"
+            elif machine.startswith('i'):
+                return f"x86 Processor"
+            else:
+                return f"Unknown Processor ({machine})"
+                
+        except Exception as e:
+            self.logger.error(f"Error in CPU model fallback detection: {e}")
+            return "Unknown CPU"
 
     def read_total_ram(self, meminfo_file):
         # Read the total RAM from the meminfo file

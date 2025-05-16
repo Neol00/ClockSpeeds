@@ -57,7 +57,8 @@ class ClockSpeedsApp(Gtk.Application):
         self.privileged_actions = PrivilegedActions(
             self.logger)
         self.settings_applier = SettingsApplier(
-            self.logger, self.global_state, self.gui_components, self.widget_factory, self.cpu_file_search, self.privileged_actions)
+            self.logger, self.global_state, self.gui_components, self.widget_factory, self.cpu_file_search, 
+            self.privileged_actions, self.config_manager)
         self.cpu_manager = CPUManager(
             self.config_manager, self.logger, self.global_state, self.gui_components, self.widget_factory,
             self.cpu_file_search, self.privileged_actions, self.settings_applier)
@@ -229,7 +230,7 @@ class ClockSpeedsApp(Gtk.Application):
                 about_fixed,
                 markup="<b>ClockSpeeds</b>\n\n"
                        "CPU Monitoring and Control Application for Linux\n\n"
-                       "Version 0.13",
+                       "Version 0.14",
                 x=120, y=30)
 
             # Credits Tab

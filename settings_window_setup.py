@@ -35,15 +35,13 @@ class SettingsWindow:
         # Call methods on startup
         self.setup_main_settings_window()
         self.setup_main_settings_box()
-        self.create_settings_notebook()
-        self.create_settings_tabs()
         self.setup_settings_gui()
         self.add_settings_widgets_to_gui_components()
 
     def setup_main_settings_window(self):
         # Create the settings window
         try:
-            self.settings_window = self.widget_factory.create_window("Settings", None, 200, 200)
+            self.settings_window = self.widget_factory.create_window("Settings", None, 210, 170)
             self.settings_window.connect("close-request", self.close_settings_window)
         except Exception as e:
             self.logger.error(f"Error setting up settings window: {e}")
@@ -70,55 +68,51 @@ class SettingsWindow:
         except Exception as e:
             self.logger.error(f"Error setting up settings box: {e}")
 
-    def create_settings_notebook(self):
-        # Create the settings notebook
-        try:
-            self.notebook = self.widget_factory.create_notebook(self.main_settings_box)
-        except Exception as e:
-            self.logger.error(f"Error creating settings notebook: {e}")
-
-    def create_settings_tabs(self):
-        # Create the general tab only (removed theme tab)
-        try:
-            self.general_tab = self.widget_factory.create_settings_tab(self.notebook, "General")
-        except Exception as e:
-            self.logger.error(f"Error creating settings tabs: {e}")
-
     def setup_settings_gui(self):
-        # Setup the settings GUI components
+        # Setup the settings GUI components directly in the main box
         try:
-            general_fixed = Gtk.Fixed()
-            self.general_tab.append(general_fixed)
+            # Create a fixed layout container for precise positioning
+            settings_fixed = Gtk.Fixed()
+            self.main_settings_box.append(settings_fixed)
+
+            # Add some margin around the settings
+            settings_fixed.set_margin_start(10)
+            settings_fixed.set_margin_end(10)
+            settings_fixed.set_margin_top(10)
+            settings_fixed.set_margin_bottom(10)
 
             # Create the Disable Scale Limits checkbutton
             self.disable_scale_limits_checkbutton = self.widget_factory.create_checkbutton(
-                general_fixed, "Disable Scale Limits", self.global_state.disable_scale_limits, self.scale_manager.on_disable_scale_limits_change, x=5, y=10)
+                settings_fixed, "Disable Scale Limits", self.global_state.disable_scale_limits, self.scale_manager.on_disable_scale_limits_change, x=5, y=10)
 
             # Create the info button for the Disable Scale Limits checkbutton
             info_button_scale = self.widget_factory.create_info_button(
-                general_fixed, self.scale_info_window, x=160, y=10)
+                settings_fixed, self.scale_info_window, x=160, y=10)
 
             # Create the MHz to GHz toggle checkbutton
             self.mhz_to_ghz_checkbutton = self.widget_factory.create_checkbutton(
-                general_fixed, "Display GHz", self.global_state.display_ghz, self.on_mhz_to_ghz_toggle, x=5, y=40)
+                settings_fixed, "Display GHz", self.global_state.display_ghz, self.on_mhz_to_ghz_toggle, x=5, y=40)
 
-            # Create the info button for the Sync Scales checkbutton
+            # Create the info button for the MHz to GHz checkbutton
             info_button_mhz_to_ghz = self.widget_factory.create_info_button(
-                general_fixed, self.mhz_to_ghz_info_window, x=160, y=40)
+                settings_fixed, self.mhz_to_ghz_info_window, x=160, y=40)
 
             # Create the Apply On Boot checkbutton
             self.apply_on_boot_checkbutton = self.widget_factory.create_checkbutton(
-                general_fixed, "Apply On Boot", None, self.on_apply_on_boot_toggle, x=5, y=70)
+                settings_fixed, "Apply On Boot", None, self.on_apply_on_boot_toggle, x=5, y=70)
 
             # Create the info button for the Apply On Boot checkbutton
             info_button_apply_boot = self.widget_factory.create_info_button(
-                general_fixed, self.apply_boot_info_window, x=160, y=70)
+                settings_fixed, self.apply_boot_info_window, x=160, y=70)
 
             # Create the update interval label and spinbutton
             interval_label = self.widget_factory.create_label(
-                general_fixed, "Update Interval Seconds:", x=23, y=100)
+                settings_fixed, "Update Interval Seconds:", x=23, y=100)
             interval_spinbutton = self.widget_factory.create_spinbutton(
-                general_fixed, self.cpu_manager.update_interval, 0.1, 20.0, 0.1, 1, 0.1, 1, self.on_interval_changed, x=40, y=125, margin_bottom=10)
+                settings_fixed, self.cpu_manager.update_interval, 0.1, 20.0, 0.1, 1, 0.1, 1, self.on_interval_changed, x=40, y=125, margin_bottom=10)
+
+            # Adjust window size to fit content properly
+            self.settings_window.set_default_size(210, 170)
 
         except Exception as e:
             self.logger.error(f"Error setting up settings window GUI: {e}")
@@ -182,13 +176,24 @@ class SettingsWindow:
     def apply_boot_info_window(self, widget):
         # Show the information dialog for the Apply On Boot checkbutton
         try:
-            info_window = self.widget_factory.create_window("Information", self.settings_window, 300, 50)
+            info_window = self.widget_factory.create_window("Information", self.settings_window, 350, 50)
             info_box = self.widget_factory.create_box(info_window)
+            
+            # Check if systemd is available to show appropriate message
+            if hasattr(self.settings_applier, 'systemd_compatible') and not self.settings_applier.systemd_compatible:
+                info_text = ("Apply On Boot is not available on this system.\n\n"
+                           "This feature requires systemd, but your system is using\n"
+                           "a different init system (such as OpenRC, SysV init, etc.).\n\n"
+                           "You will need to manually apply your settings after each reboot.")
+            else:
+                info_text = ("Enabling this option will apply the settings you have specifically\n"
+                           "changed on boot with a systemd service and a complimentary script.\n"
+                           "Disabling this option will disable and delete the files.\n\n"
+                           "Note: You must first apply settings before this option becomes available.")
+            
             info_label = self.widget_factory.create_label(
                 info_box,
-                "Enabling this option will apply the settings you have specifically\n"
-                "changed on boot with a systemd service and a complimentary script.\n"
-                "Disabling this option will disable and delete the files",
+                info_text,
                 margin_start=10, margin_end=10, margin_top=10, margin_bottom=10)
 
             def on_destroy(widget):
@@ -216,14 +221,37 @@ class SettingsWindow:
         self.mhz_to_ghz_checkbutton.set_active(self.global_state.display_ghz)
 
     def on_apply_on_boot_toggle(self, checkbutton):
-        if self.global_state.ignore_boot_checkbutton_toggle:
-            return
-        if checkbutton.get_active():
+        """Handle Apply On Boot checkbutton toggle with improved error handling"""
+        try:
+            # Ignore if specifically told to (during programmatic changes)
+            if self.global_state.ignore_boot_checkbutton_toggle:
+                return
+            
+            # Check if systemd is compatible before proceeding
+            if not self.settings_applier.systemd_compatible:
+                self.logger.warning("Apply On Boot toggled but systemd is not compatible")
+                # Revert the checkbutton and show explanation
+                self.global_state.ignore_boot_checkbutton_toggle = True
+                checkbutton.set_active(False)
+                self.global_state.ignore_boot_checkbutton_toggle = False
+                self.settings_applier.show_systemd_incompatible_dialog()
+                return
+            
+            # Proceed with normal toggle logic
+            if checkbutton.get_active():
+                self.apply_on_boot_checkbutton.set_sensitive(False)
+                self.settings_applier.create_systemd_service()
+            else:
+                self.apply_on_boot_checkbutton.set_sensitive(False)
+                self.settings_applier.remove_systemd_service()
+                
+        except Exception as e:
+            self.logger.error(f"Error in on_apply_on_boot_toggle: {e}")
+            # Ensure checkbutton is reset on any error
+            self.global_state.ignore_boot_checkbutton_toggle = True
+            checkbutton.set_active(False)
             self.apply_on_boot_checkbutton.set_sensitive(False)
-            self.settings_applier.create_systemd_service()
-        else:
-            self.apply_on_boot_checkbutton.set_sensitive(False)
-            self.settings_applier.remove_systemd_service()
+            self.global_state.ignore_boot_checkbutton_toggle = False
 
     def on_interval_changed(self, spinbutton):
         # Update the interval value when the spinbutton value changes

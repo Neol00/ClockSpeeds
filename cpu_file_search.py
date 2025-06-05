@@ -167,28 +167,38 @@ class CPUFileSearch:
 
     def load_paths_from_cache(self, cached_directories):
         # Load cached paths for various CPU files
-        self.cpu_directory = cached_directories.get("cpu_directory")
-        self.intel_boost_path = cached_directories.get("intel_boost_path")
-        self.package_temp_file = cached_directories.get("package_temp_file")
-        self.proc_files = cached_directories.get("proc_files", {})
-        self.intel_tdp_files = cached_directories.get("intel_tdp_files", {})
-        self.cache_files = cached_directories.get("cache_files", {})
-        
-        # Handle potential missing keys in the cached data
-        cpu_files = cached_directories.get("cpu_files", {})
-        self.cpu_files = {}
-        for key in ['scaling_max_files', 'scaling_min_files', 'speed_files', 'governor_files', 
-                    'cpuinfo_max_files', 'cpuinfo_min_files', 'available_governors_files', 
-                    'boost_files', 'package_throttle_time_files', 'epb_files']:
-            if key in cpu_files:
-                self.cpu_files[key] = {int(k): v for k, v in cpu_files[key].items()}
-            else:
-                self.cpu_files[key] = {}
-        
-        self.cpu_type = "Intel" if self.intel_boost_path else "Other"
+        try:
+            self.cpu_directory = cached_directories.get("cpu_directory")
+            self.intel_boost_path = cached_directories.get("intel_boost_path")
+            self.package_temp_file = cached_directories.get("package_temp_file")
+            self.proc_files = cached_directories.get("proc_files", {})
+            self.intel_tdp_files = cached_directories.get("intel_tdp_files", {})
+            self.cache_files = cached_directories.get("cache_files", {})
+            
+            # Handle potential missing keys in the cached data
+            cpu_files = cached_directories.get("cpu_files", {})
+            self.cpu_files = {}
+            for key in ['scaling_max_files', 'scaling_min_files', 'speed_files', 'governor_files', 
+                        'cpuinfo_max_files', 'cpuinfo_min_files', 'available_governors_files', 
+                        'boost_files', 'package_throttle_time_files', 'epb_files']:
+                if key in cpu_files:
+                    try:
+                        self.cpu_files[key] = {int(k): v for k, v in cpu_files[key].items()}
+                    except (ValueError, TypeError) as e:
+                        self.logger.warning(f"Invalid cache data for {key}: {e}")
+                        self.cpu_files[key] = {}
+                else:
+                    self.cpu_files[key] = {}
+            
+            self.cpu_type = "Intel" if self.intel_boost_path else "Other"
 
-        # Validate the loaded paths
-        self.validate_loaded_paths()
+            # Validate the loaded paths
+            self.validate_loaded_paths()
+            
+        except Exception as e:
+            self.logger.error(f"Error loading paths from cache: {e}")
+            self.logger.info("Falling back to fresh CPU file search")
+            self.initialize_cpu_files()
 
     def validate_loaded_paths(self):
         # Validate that the necessary paths are loaded correctly
@@ -223,11 +233,40 @@ class CPUFileSearch:
                     self.logger.error(f"Failed to remove cache file: {e}")
             # Reinitialize files
             self.initialize_cpu_files()
-            # Validate again to make sure critical paths are now available
+            # Check if critical paths are now available after reinitializing
             if not self.cpu_directory or not any(self.cpu_files['scaling_max_files'].values()) or not self.proc_files['stat']:
-                for error in errors:
-                    self.logger.error(error)
-                raise RuntimeError("Failed to initialize necessary CPU paths and files.")
+                self.logger.warning("Some CPU control features may not be available due to missing system files.")
+                self.logger.warning("This is common in virtualized environments like WSL.")
+                # Set minimal fallback values to allow the application to start
+                self.setup_fallback_configuration()
+
+    def setup_fallback_configuration(self):
+        # Setup minimal configuration when CPU control files are unavailable
+        try:
+            # Set basic CPU directory fallback
+            if not self.cpu_directory:
+                self.cpu_directory = "/sys/devices/system/cpu"
+            
+            # Set basic proc/stat fallback (this should almost always exist)
+            if not self.proc_files.get('stat'):
+                self.proc_files['stat'] = "/proc/stat"
+            
+            # Initialize empty CPU files for threads if not present
+            required_file_types = ['scaling_max_files', 'scaling_min_files', 'speed_files', 
+                                 'governor_files', 'cpuinfo_max_files', 'cpuinfo_min_files',
+                                 'available_governors_files', 'boost_files', 'package_throttle_time_files', 'epb_files']
+            
+            for file_type in required_file_types:
+                if file_type not in self.cpu_files:
+                    self.cpu_files[file_type] = {}
+            
+            # Set fallback CPU type
+            self.cpu_type = "Other"
+            
+            self.logger.info("Fallback configuration applied - application will run with limited functionality")
+            
+        except Exception as e:
+            self.logger.error(f"Error setting up fallback configuration: {e}")
 
     def initialize_cpu_files(self):
         # Initialize CPU files by discovering paths

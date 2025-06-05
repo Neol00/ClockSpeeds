@@ -119,6 +119,7 @@ class ClockSpeedsApp(Gtk.Application):
             self.settings_applier.initialize_settings_file()
             self.settings_applier.update_checkbutton_sensitivity()
             self.settings_window.init_display_ghz_setting()
+            self.settings_window.init_dark_mode_setting()
             self.global_state.save_settings()
         except Exception as e:
             self.logger.error(f"Error calling main methods: {e}")
@@ -815,6 +816,59 @@ class CPUGraphArea(Gtk.DrawingArea):
         self.cpu_id = cpu_id
         self.usage_history = [0] * 60  # Store 60 seconds of history
         self.set_draw_func(self.draw)
+        
+        # Get style context for theme colors
+        self.style_context = self.get_style_context()
+        
+    def get_theme_colors(self):
+        try:
+            # Get colors from the current GTK theme
+            bg_color = None
+            
+            # Try to get theme background color
+            bg_lookup = self.style_context.lookup_color('theme_bg_color')
+            if bg_lookup[0]:
+                bg_color = bg_lookup[1]
+            else:
+                # Fallback to base color
+                base_lookup = self.style_context.lookup_color('theme_base_color')
+                if base_lookup[0]:
+                    bg_color = base_lookup[1]
+            
+            # If we got a valid background color, determine if it's light or dark
+            if bg_color and hasattr(bg_color, 'red'):
+                is_light = bg_color.red > 0.5
+                bg_rgb = (bg_color.red, bg_color.green, bg_color.blue)
+            else:
+                # Fallback: assume dark theme
+                is_light = False
+                bg_rgb = (0.188, 0.196, 0.235)  # Original dark background
+            
+            # Choose colors based on theme
+            if is_light:  # Light theme
+                graph_color = (0.2, 0.4, 0.8)
+                tint_color = (0.2, 0.4, 0.8, 0.2)
+                outline_color = (0.6, 0.6, 0.6)
+            else:  # Dark theme
+                graph_color = (0.4, 0.7, 1.0)
+                tint_color = (0.4, 0.7, 1.0, 0.2)
+                outline_color = (0.4, 0.4, 0.4)
+                
+            return {
+                'background': bg_rgb,
+                'graph': graph_color,
+                'tint': tint_color,
+                'outline': outline_color
+            }
+            
+        except Exception:
+            # Fallback to original colors if theme detection fails
+            return {
+                'background': (0.188, 0.196, 0.235),
+                'graph': (0.322, 0.580, 0.886),
+                'tint': (0.2, 0.4, 0.8, 0.2),
+                'outline': (0.3, 0.3, 0.3)
+            }
 
     def update(self, usage):
         self.usage_history.pop(0)
@@ -822,18 +876,21 @@ class CPUGraphArea(Gtk.DrawingArea):
         self.queue_draw()
 
     def draw(self, area, cr, width, height):
+        # Get theme-appropriate colors
+        colors = self.get_theme_colors()
+        
         # Background
-        cr.set_source_rgb(0.188, 0.196, 0.235)
+        cr.set_source_rgb(*colors['background'])
         cr.paint()
 
         # Draw outline
-        cr.set_source_rgb(0.3, 0.3, 0.3)  # Light gray for the outline
+        cr.set_source_rgb(*colors['outline'])
         cr.set_line_width(1)
         cr.rectangle(0.5, 0.5, width - 1, height - 1)
         cr.stroke()
 
         # Draw tint underneath the graph line
-        cr.set_source_rgba(0.2, 0.4, 0.8, 0.2)  # Blue tint with alpha
+        cr.set_source_rgba(*colors['tint'])
         
         cr.move_to(0, height)
         for i, usage in enumerate(self.usage_history):
@@ -845,7 +902,7 @@ class CPUGraphArea(Gtk.DrawingArea):
         cr.fill()
 
         # Draw graph
-        cr.set_source_rgb(0.322, 0.580, 0.886)
+        cr.set_source_rgb(*colors['graph'])
         cr.set_line_width(1.5)
 
         cr.move_to(0, height - (self.usage_history[0] * height))
@@ -861,7 +918,7 @@ def main():
         app = ClockSpeedsApp()
         app.run()
     except Exception as e:
-        app.logger.error(f"Error launching the main application: {e}")
+        print(f"Error launching the main application: {e}")
 
 if __name__ == "__main__":
     main()

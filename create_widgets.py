@@ -207,7 +207,7 @@ class WidgetFactory:
 
     def update_all_scale_labels(self):
         # Update the position of all scale labels
-        for scale, label in self.scales:
+        for scale, label, is_frequency in self.scales:
             self._update_scale_label_position(scale, label)
 
     def _update_scale_label_position(self, scale, label):

@@ -97,22 +97,31 @@ class SettingsWindow:
             info_button_mhz_to_ghz = self.widget_factory.create_info_button(
                 settings_fixed, self.mhz_to_ghz_info_window, x=160, y=40)
 
-            # Create the Apply On Boot checkbutton
+            # Create the Apply On Boot checkbutton (initially disabled)
             self.apply_on_boot_checkbutton = self.widget_factory.create_checkbutton(
                 settings_fixed, "Apply On Boot", None, self.on_apply_on_boot_toggle, x=5, y=70)
+            self.apply_on_boot_checkbutton.set_sensitive(False)  # Start disabled, will be enabled by settings applier if appropriate
 
             # Create the info button for the Apply On Boot checkbutton
             info_button_apply_boot = self.widget_factory.create_info_button(
                 settings_fixed, self.apply_boot_info_window, x=160, y=70)
 
+            # Create the Dark Mode toggle checkbutton
+            self.dark_mode_checkbutton = self.widget_factory.create_checkbutton(
+                settings_fixed, "Dark Mode", self.get_current_theme_preference(), self.on_dark_mode_toggle, x=5, y=100)
+
+            # Create the info button for the Dark Mode checkbutton
+            info_button_dark_mode = self.widget_factory.create_info_button(
+                settings_fixed, self.dark_mode_info_window, x=160, y=100)
+
             # Create the update interval label and spinbutton
             interval_label = self.widget_factory.create_label(
-                settings_fixed, "Update Interval Seconds:", x=23, y=100)
+                settings_fixed, "Update Interval Seconds:", x=23, y=130)
             interval_spinbutton = self.widget_factory.create_spinbutton(
-                settings_fixed, self.cpu_manager.update_interval, 0.1, 20.0, 0.1, 1, 0.1, 1, self.on_interval_changed, x=40, y=125, margin_bottom=10)
+                settings_fixed, self.cpu_manager.update_interval, 0.1, 20.0, 0.1, 1, 0.1, 1, self.on_interval_changed, x=40, y=155, margin_bottom=10)
 
             # Adjust window size to fit content properly
-            self.settings_window.set_default_size(210, 170)
+            self.settings_window.set_default_size(210, 200)
 
         except Exception as e:
             self.logger.error(f"Error setting up settings window GUI: {e}")
@@ -122,8 +131,8 @@ class SettingsWindow:
         try:
             self.gui_components['settings_window'] = self.settings_window
             self.gui_components['disable_scale_limits_checkbutton'] = self.disable_scale_limits_checkbutton
-            self.gui_components['sync_scales_checkbutton'] = self.sync_scales_checkbutton
             self.gui_components['apply_on_boot_checkbutton'] = self.apply_on_boot_checkbutton
+            self.gui_components['dark_mode_checkbutton'] = self.dark_mode_checkbutton
             self.logger.info("Settings widgets added to gui_components.")
         except Exception as e:
             self.logger.error(f"Error adding settings_window widgets to gui_components: {e}")
@@ -257,3 +266,80 @@ class SettingsWindow:
         # Update the interval value when the spinbutton value changes
         new_interval = round(spinbutton.get_value(), 1)
         self.cpu_manager.set_update_interval(new_interval)
+
+    def get_current_theme_preference(self):
+        # Get the current theme preference from config
+        try:
+            dark_mode_setting = self.config_manager.get_setting('Settings', 'dark_mode', 'False')
+            return dark_mode_setting == 'True'
+        except Exception as e:
+            self.logger.error(f"Error getting dark mode setting: {e}")
+            return False
+
+    def on_dark_mode_toggle(self, checkbutton):
+        # Toggle between light and dark themes
+        try:
+            is_dark = checkbutton.get_active()
+            
+            # Set the theme preference on default settings
+            settings = Gtk.Settings.get_default()
+            settings.set_property("gtk-application-prefer-dark-theme", is_dark)
+            
+            # Save the preference to config
+            self.config_manager.set_setting('Settings', 'dark_mode', str(is_dark))
+            
+            # Note: Graphs will automatically update on next redraw cycle
+            
+        except Exception as e:
+            self.logger.error(f"Error toggling dark mode: {e}")
+
+    def refresh_all_graphs(self):
+        # Force all CPU graphs to redraw with new theme colors
+        try:
+            if 'cpu_graphs' in self.gui_components:
+                for graph in self.gui_components['cpu_graphs'].values():
+                    graph.queue_draw()
+            
+            if 'avg_usage_graph' in self.gui_components:
+                self.gui_components['avg_usage_graph'].queue_draw()
+                
+        except Exception as e:
+            self.logger.error(f"Error refreshing graphs: {e}")
+
+    def dark_mode_info_window(self, widget):
+        # Show the information dialog for the Dark Mode checkbutton
+        try:
+            info_window = self.widget_factory.create_window("Information", self.settings_window, 300, 50)
+            info_box = self.widget_factory.create_box(info_window)
+            info_label = self.widget_factory.create_label(
+                info_box,
+                "Toggle between light and dark theme for the entire application.\n"
+                "CPU graphs will automatically adapt to match the selected theme.",
+                margin_start=10, margin_end=10, margin_top=10, margin_bottom=10)
+
+            def on_destroy(widget):
+                info_window.close()
+
+            info_button = self.widget_factory.create_button(
+                info_box, "OK", margin_start=126, margin_end=126, margin_bottom=10)
+            info_button.connect("clicked", on_destroy)
+            info_window.connect("close-request", on_destroy)
+
+            info_window.present()
+        except Exception as e:
+            self.logger.error(f"Error showing Dark Mode info window: {e}")
+
+    def init_dark_mode_setting(self):
+        # Initialize the dark mode setting on startup
+        try:
+            is_dark = self.get_current_theme_preference()
+            
+            # Apply the theme preference to the default settings
+            settings = Gtk.Settings.get_default()
+            settings.set_property("gtk-application-prefer-dark-theme", is_dark)
+            
+            # Update the checkbutton state
+            self.dark_mode_checkbutton.set_active(is_dark)
+            
+        except Exception as e:
+            self.logger.error(f"Error initializing dark mode setting: {e}")

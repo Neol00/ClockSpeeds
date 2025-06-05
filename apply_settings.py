@@ -44,6 +44,11 @@ class SettingsApplier:
     def is_systemd_available(self):
         """Check if systemd is available and active as the init system"""
         try:
+            # Check if running in WSL (Windows Subsystem for Linux)
+            if self.is_wsl_environment():
+                self.logger.info("WSL environment detected - Apply On Boot not supported")
+                return False
+            
             # Check if systemd is installed
             result = subprocess.run(['which', 'systemctl'], 
                                     stdout=subprocess.PIPE, 
@@ -84,6 +89,30 @@ class SettingsApplier:
             return False
         except Exception as e:
             self.logger.error(f"Error checking systemd availability: {e}")
+            return False
+
+    def is_wsl_environment(self):
+        """Check if running in Windows Subsystem for Linux (WSL)"""
+        try:
+            # Check for WSL version file
+            if os.path.exists('/proc/version'):
+                with open('/proc/version', 'r') as f:
+                    version_info = f.read().lower()
+                    if 'microsoft' in version_info or 'wsl' in version_info:
+                        return True
+            
+            # Check for WSL environment variable
+            if os.environ.get('WSL_DISTRO_NAME') or os.environ.get('WSLENV'):
+                return True
+                
+            # Check for Windows filesystem mounted at /mnt/c
+            if os.path.exists('/mnt/c/Windows'):
+                return True
+                
+            return False
+            
+        except Exception as e:
+            self.logger.warning(f"Error checking WSL environment: {e}")
             return False
 
     def initialize_settings_file(self):
